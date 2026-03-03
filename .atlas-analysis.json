@@ -1,0 +1,119 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Shannon",
+  "projectDescription": "Fully autonomous AI penetration testing framework for web applications",
+  "theme": "aspen",
+  "primaryColor": "#DC2626",
+  "lightColor": "#FCA5A5",
+  "darkColor": "#991B1B",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/pipeline-phases",
+              "concepts/agents",
+              "concepts/workspaces"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/configuration",
+              "guides/authentication",
+              "guides/cloud-providers",
+              "guides/resume-workflow",
+              "guides/monitoring"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/commands",
+              "cli/options",
+              "cli/environment-variables"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Coverage & Examples",
+        "groups": [
+          {
+            "group": "Reports & Results",
+            "pages": [
+              "examples/overview",
+              "examples/juice-shop",
+              "examples/capital-api",
+              "examples/crapi"
+            ]
+          },
+          {
+            "group": "Testing Coverage",
+            "pages": [
+              "coverage/overview",
+              "coverage/vulnerability-types",
+              "coverage/benchmark-results"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "advanced/troubleshooting",
+              "advanced/platform-specific",
+              "advanced/limitations",
+              "advanced/faq"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/architecture-deep-dive",
+              "development/adding-agents",
+              "development/custom-prompts"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Fully autonomous AI-powered penetration testing",
+    "Multi-phase pipeline with parallel vulnerability analysis",
+    "Browser automation with Playwright MCP",
+    "Temporal workflow orchestration with resume capability",
+    "OWASP vulnerability coverage (Injection, XSS, SSRF, Auth/Authz)",
+    "Proof-by-exploitation methodology",
+    "96.15% success rate on XBOW benchmark",
+    "Docker-based deployment with Claude Agent SDK integration"
+  ],
+  "publicApiSurface": [
+    "./shannon start URL=<url> REPO=<name>",
+    "./shannon stop [CLEAN=true]",
+    "./shannon logs ID=<workflow-id>",
+    "./shannon workspaces",
+    "./shannon help",
+    "WORKSPACE parameter for named workspaces",
+    "CONFIG parameter for YAML configuration",
+    "OUTPUT parameter for custom report directory",
+    "PIPELINE_TESTING flag for fast testing mode",
+    "ROUTER flag for multi-model support"
+  ]
+}
