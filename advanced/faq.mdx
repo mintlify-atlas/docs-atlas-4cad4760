@@ -1,0 +1,226 @@
+---
+title: 'FAQ'
+description: 'Frequently asked questions about Shannon'
+---
+
+Answers to common questions about Shannon's features, limitations, and usage.
+
+## General Questions
+
+<AccordionGroup>
+  <Accordion title="What is Shannon?">
+    Shannon is an AI-powered penetration testing framework that automates white-box security testing for web applications. It combines source code analysis with active exploitation to identify and prove vulnerabilities before they reach production.
+  </Accordion>
+
+  <Accordion title="What's the difference between Shannon Lite and Shannon Pro?">
+    **Shannon Lite** (this open-source version) uses a multi-agent AI framework for autonomous pentesting with support for Injection, XSS, SSRF, and Auth/Authz vulnerabilities.
+
+    **Shannon Pro** (commercial) adds:
+    - Advanced LLM-powered data flow analysis engine
+    - Enterprise-grade code analysis
+    - CI/CD integration
+    - Dedicated support
+    - Enhanced vulnerability detection
+
+    See [Shannon Pro comparison](https://github.com/KeygraphHQ/shannon/blob/main/SHANNON-PRO.md) for details.
+  </Accordion>
+
+  <Accordion title="Is Shannon safe to use on production applications?">
+    **No.** Shannon is designed to actively execute attacks to confirm vulnerabilities, which can have mutative effects on the target application and its data. Only use Shannon on sandboxed, staging, or local development environments.
+
+    See [Limitations](/advanced/limitations) for more details.
+  </Accordion>
+
+  <Accordion title="Do I need authorization to run Shannon?">
+    **Yes.** You must have explicit, written authorization from the owner of the target system before running Shannon. Unauthorized scanning is illegal under laws like the Computer Fraud and Abuse Act (CFAA).
+  </Accordion>
+</AccordionGroup>
+
+## Technical Questions
+
+<AccordionGroup>
+  <Accordion title="What vulnerabilities can Shannon detect?">
+    Shannon Lite currently targets:
+    - **Broken Authentication** - Login bypass, session hijacking
+    - **Broken Authorization** - Privilege escalation, IDOR
+    - **Injection** - SQL, command, LDAP injection
+    - **Cross-Site Scripting (XSS)** - Stored, reflected, DOM-based
+    - **Server-Side Request Forgery (SSRF)** - Internal service access
+
+    See [Coverage and Roadmap](https://github.com/KeygraphHQ/shannon/blob/main/COVERAGE.md) for the complete list.
+  </Accordion>
+
+  <Accordion title="How long does a Shannon test take?">
+    A full test run typically takes **1 to 1.5 hours** to complete. Actual runtime varies based on:
+    - Application complexity
+    - Number of endpoints
+    - Authentication complexity
+    - API rate limits
+  </Accordion>
+
+  <Accordion title="How much does it cost to run Shannon?">
+    Running a full test using Anthropic's Claude 4.5 Sonnet model costs approximately **$50 USD**. Costs vary based on:
+    - Model pricing
+    - Application complexity
+    - Number of agents executed
+
+    You can reduce costs by:
+    - Using `PIPELINE_TESTING=true` for faster test runs
+    - Configuring `max_concurrent_pipelines` to reduce burst API usage
+    - Using AWS Bedrock or Google Vertex AI for different pricing
+  </Accordion>
+
+  <Accordion title="Can Shannon test applications without source code?">
+    No. Shannon Lite is designed for **white-box testing** and expects access to your application's source code and repository layout. Black-box testing is not supported.
+  </Accordion>
+
+  <Accordion title="What AI models does Shannon support?">
+    Shannon officially supports:
+    - **Anthropic Claude** (recommended) via API key
+    - **AWS Bedrock** (Claude models)
+    - **Google Vertex AI** (Claude models)
+
+    Experimental support exists for:
+    - OpenAI GPT models via Router Mode
+    - Google Gemini via Router Mode
+
+    Note: Shannon is optimized for Anthropic Claude models. Alternative providers may produce inconsistent results.
+  </Accordion>
+</AccordionGroup>
+
+## Usage Questions
+
+<AccordionGroup>
+  <Accordion title="How do I resume a failed test run?">
+    Shannon supports workspaces that allow resuming interrupted runs:
+
+    ```bash
+    # Start with a named workspace
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+
+    # Resume the same workspace (skips completed agents)
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+    ```
+
+    Shannon detects completed agents and picks up where it left off. See [Workspaces](/essentials/workspaces) for details.
+  </Accordion>
+
+  <Accordion title="How do I test a local application?">
+    Docker containers cannot reach `localhost` on your host machine. Use `host.docker.internal` instead:
+
+    ```bash
+    ./shannon start URL=http://host.docker.internal:3000 REPO=repo-name
+    ```
+
+    See [Platform-Specific Instructions](/advanced/platform-specific) for more details.
+  </Accordion>
+
+  <Accordion title="Can I configure authentication for my application?">
+    Yes. Shannon supports form-based and SSO authentication, including 2FA/TOTP. Create a configuration file:
+
+    ```yaml
+    authentication:
+      login_type: form
+      login_url: "https://your-app.com/login"
+      credentials:
+        username: "test@example.com"
+        password: "yourpassword"
+        totp_secret: "LB2E2RX7XFHSTGCK"  # Optional for 2FA
+
+      login_flow:
+        - "Type $username into the email field"
+        - "Type $password into the password field"
+        - "Click the 'Sign In' button"
+
+      success_condition:
+        type: url_contains
+        value: "/dashboard"
+    ```
+
+    See [Configuration](/essentials/configuration) for complete options.
+  </Accordion>
+
+  <Accordion title="Where are the test results stored?">
+    All results are saved to `./audit-logs/{hostname}_{sessionId}/` by default:
+
+    ```
+    audit-logs/{hostname}_{sessionId}/
+    ├── session.json          # Metrics and session data
+    ├── agents/               # Per-agent execution logs
+    ├── prompts/              # Prompt snapshots
+    └── deliverables/
+        └── comprehensive_security_assessment_report.md
+    ```
+
+    Use `OUTPUT=<path>` to specify a custom directory.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting Questions
+
+<AccordionGroup>
+  <Accordion title="Why am I getting 'Repository not found' error?">
+    The `REPO` parameter must be a folder name inside `./repos/`, not an absolute path. Clone or symlink your repository:
+
+    ```bash
+    ln -s /path/to/repo ./repos/my-repo
+    ```
+
+    See [Troubleshooting](/advanced/troubleshooting) for more solutions.
+  </Accordion>
+
+  <Accordion title="How do I handle API rate limits?">
+    If using Anthropic subscription plans with rolling 5-hour windows, add this to your config file:
+
+    ```yaml
+    pipeline:
+      retry_preset: subscription          # Extends max backoff to 6h
+      max_concurrent_pipelines: 2         # Run 2 of 5 pipelines at a time
+    ```
+
+    This reduces burst API usage at the cost of longer total runtime.
+  </Accordion>
+
+  <Accordion title="Why is Windows Defender flagging Shannon files?">
+    Windows Defender may flag files in `deliverables/` as malware. These are **false positives** caused by exploit code in the reports.
+
+    **Solution**: Add an exclusion for the Shannon directory in Windows Defender, or use WSL2 to isolate the files.
+
+    See [Platform-Specific Instructions](/advanced/platform-specific#windows-antivirus-false-positives) for details.
+  </Accordion>
+
+  <Accordion title="How do I reset Shannon's state completely?">
+    Stop Shannon with full cleanup:
+
+    ```bash
+    ./shannon stop CLEAN=true
+    ```
+
+    This deletes all workflow data, audit logs, and workspaces. Make sure to back up any reports you need first.
+  </Accordion>
+</AccordionGroup>
+
+## Development Questions
+
+<AccordionGroup>
+  <Accordion title="Can I add custom vulnerability detection agents?">
+    Yes. Shannon's architecture is designed to be extensible. See [Adding Agents](/development/adding-agents) for a complete guide on creating custom agents.
+  </Accordion>
+
+  <Accordion title="Can I customize the prompts used by agents?">
+    Yes. Prompts are stored in the `prompts/` directory as `.txt` files with variable substitution. See [Custom Prompts](/development/custom-prompts) for details on customization.
+  </Accordion>
+
+  <Accordion title="Does Shannon have an API?">
+    Shannon uses Temporal for workflow orchestration, which provides a gRPC API for workflow management. However, there is no REST API for direct integration. The primary interface is the `./shannon` CLI tool.
+  </Accordion>
+</AccordionGroup>
+
+## Support
+
+If your question isn't answered here:
+
+- Join our [Discord](https://discord.gg/KAqzSHHpRt) for community support
+- Check [Troubleshooting](/advanced/troubleshooting) for common issues
+- Report bugs via [GitHub Issues](https://github.com/KeygraphHQ/shannon/issues)
+- Contact us at [shannon@keygraph.io](mailto:shannon@keygraph.io)

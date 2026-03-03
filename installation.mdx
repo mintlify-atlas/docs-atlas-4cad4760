@@ -1,0 +1,579 @@
+---
+title: Installation
+description: Detailed installation instructions and platform-specific setup for Shannon
+---
+
+## Prerequisites
+
+Before installing Shannon, ensure you have the following prerequisites:
+
+### Required
+
+<AccordionGroup>
+  <Accordion title="Docker" icon="docker">
+    Shannon runs entirely in Docker containers. Install Docker for your platform:
+    
+    - **macOS/Windows**: [Docker Desktop](https://docs.docker.com/get-docker/)
+    - **Linux**: [Docker Engine](https://docs.docker.com/engine/install/)
+    
+    Verify installation:
+    ```bash
+    docker --version
+    docker compose version
+    ```
+  </Accordion>
+  
+  <Accordion title="AI Provider Credentials" icon="key">
+    Shannon requires access to Claude models. Choose one of the following options:
+    
+    **Option 1: Anthropic API (Recommended)**
+    - Get your API key from the [Anthropic Console](https://console.anthropic.com)
+    - Set `ANTHROPIC_API_KEY` in your `.env` file
+    
+    **Option 2: Claude Code OAuth Token**
+    - Use your Claude Code OAuth token
+    - Set `CLAUDE_CODE_OAUTH_TOKEN` in your `.env` file
+    
+    **Option 3: AWS Bedrock**
+    - Configure AWS credentials and Bedrock access
+    - See [AWS Bedrock setup](#aws-bedrock) below
+    
+    **Option 4: Google Vertex AI**
+    - Configure GCP service account with Vertex AI access
+    - See [Google Vertex AI setup](#google-vertex-ai) below
+  </Accordion>
+</AccordionGroup>
+
+### Recommended
+
+<CardGroup cols={2}>
+  <Card title="Sufficient Resources" icon="server">
+    - **CPU**: 4+ cores recommended
+    - **RAM**: 8GB+ recommended
+    - **Disk**: 10GB+ free space
+  </Card>
+  
+  <Card title="Network Access" icon="network-wired">
+    - Internet access for Docker image downloads
+    - Access to target application (can be localhost)
+    - Access to AI provider API endpoints
+  </Card>
+</CardGroup>
+
+## Installation steps
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone Shannon from GitHub:
+
+    ```bash
+    git clone https://github.com/KeygraphHQ/shannon.git
+    cd shannon
+    ```
+  </Step>
+  
+  <Step title="Configure environment">
+    Create your `.env` file from the example:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` and add your credentials:
+
+    <CodeGroup>
+      ```bash Anthropic API
+      # Recommended output token configuration
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+
+      # Anthropic API key (recommended)
+      ANTHROPIC_API_KEY=your-api-key-here
+      ```
+
+      ```bash Claude Code OAuth
+      # Recommended output token configuration
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+
+      # Claude Code OAuth token
+      CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here
+      ```
+    </CodeGroup>
+
+    <Info>
+      The `CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000` setting is recommended for larger tool outputs and better analysis quality.
+    </Info>
+  </Step>
+  
+  <Step title="Prepare repository directory">
+    Create the `repos/` directory for target applications:
+
+    ```bash
+    mkdir -p repos
+    ```
+
+    This is where you'll clone or symlink the applications you want to test.
+  </Step>
+  
+  <Step title="Verify installation">
+    Test that Shannon can build and start:
+
+    ```bash
+    ./shannon help
+    ```
+
+    You should see Shannon's help output with available commands.
+  </Step>
+</Steps>
+
+## Platform-specific instructions
+
+### macOS
+
+<Steps>
+  <Step title="Install Docker Desktop">
+    Download and install [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/).
+  </Step>
+  
+  <Step title="Configure resources">
+    Open Docker Desktop preferences and allocate:
+    - CPUs: 4 or more
+    - Memory: 8GB or more
+  </Step>
+  
+  <Step title="Run Shannon">
+    Shannon works out of the box with Docker Desktop installed:
+
+    ```bash
+    ./shannon start URL=https://example.com REPO=your-repo
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  macOS users can test local applications using `host.docker.internal` instead of `localhost`.
+</Info>
+
+### Windows
+
+Shannon can run on Windows using either Git Bash or WSL2 (recommended).
+
+<Tabs>
+  <Tab title="WSL2 (Recommended)">
+    <Steps>
+      <Step title="Install WSL2">
+        Open PowerShell as Administrator and run:
+
+        ```powershell
+        wsl --install
+        wsl --set-default-version 2
+        ```
+
+        Check installed distributions:
+
+        ```powershell
+        wsl --list --verbose
+        ```
+      </Step>
+      
+      <Step title="Install Ubuntu">
+        If you don't have a distribution installed:
+
+        ```powershell
+        wsl --list --online
+        wsl --install Ubuntu-24.04
+        ```
+
+        Convert existing WSL1 distributions to WSL2:
+
+        ```powershell
+        wsl --set-version <distro-name> 2
+        ```
+      </Step>
+      
+      <Step title="Install Docker Desktop">
+        1. Download [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+        2. Enable WSL2 backend in Settings > General > "Use the WSL 2 based engine"
+      </Step>
+      
+      <Step title="Clone and run in WSL">
+        Open WSL terminal:
+
+        ```powershell
+        wsl -d Ubuntu-24.04
+        ```
+
+        Inside WSL:
+
+        ```bash
+        git clone https://github.com/KeygraphHQ/shannon.git
+        cd shannon
+        cp .env.example .env
+        # Edit .env with your API key
+        ./shannon start URL=https://your-app.com REPO=your-repo
+        ```
+      </Step>
+      
+      <Step title="Access Temporal UI">
+        Find your WSL IP address:
+
+        ```bash
+        ip addr | grep eth0
+        ```
+
+        Navigate to `http://<wsl-ip>:8233` in your Windows browser.
+      </Step>
+    </Steps>
+
+    <Warning>
+      Windows Defender may flag exploit code in reports as false positives. Add an exclusion for the Shannon directory in Windows Defender settings.
+    </Warning>
+  </Tab>
+  
+  <Tab title="Git Bash">
+    <Steps>
+      <Step title="Install Git for Windows">
+        Download and install [Git for Windows](https://git-scm.com/install/windows) which includes Git Bash.
+      </Step>
+      
+      <Step title="Install Docker Desktop">
+        Download and install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/).
+      </Step>
+      
+      <Step title="Run Shannon from Git Bash">
+        Open Git Bash and navigate to Shannon:
+
+        ```bash
+        git clone https://github.com/KeygraphHQ/shannon.git
+        cd shannon
+        cp .env.example .env
+        # Edit .env with your API key
+        ./shannon start URL=https://your-app.com REPO=your-repo
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+### Linux
+
+<Steps>
+  <Step title="Install Docker Engine">
+    Follow the official Docker installation guide for your distribution:
+    
+    - [Ubuntu](https://docs.docker.com/engine/install/ubuntu/)
+    - [Debian](https://docs.docker.com/engine/install/debian/)
+    - [Fedora](https://docs.docker.com/engine/install/fedora/)
+    - [CentOS](https://docs.docker.com/engine/install/centos/)
+  </Step>
+  
+  <Step title="Add user to docker group">
+    Avoid needing `sudo` for Docker commands:
+
+    ```bash
+    sudo usermod -aG docker $USER
+    newgrp docker
+    ```
+
+    Verify:
+
+    ```bash
+    docker run hello-world
+    ```
+  </Step>
+  
+  <Step title="Run Shannon">
+    ```bash
+    ./shannon start URL=https://example.com REPO=your-repo
+    ```
+
+    <Info>
+      If you encounter permission issues with output files, ensure your user has access to the Docker socket and is in the `docker` group.
+    </Info>
+  </Step>
+</Steps>
+
+## AI Provider Setup
+
+### Anthropic API (Recommended)
+
+The simplest and recommended approach:
+
+<Steps>
+  <Step title="Get API key">
+    1. Sign up at [Anthropic Console](https://console.anthropic.com)
+    2. Navigate to API Keys
+    3. Create a new API key
+  </Step>
+  
+  <Step title="Configure Shannon">
+    Add to your `.env` file:
+
+    ```bash
+    ANTHROPIC_API_KEY=your-api-key
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  **Rate Limits:** Anthropic subscription plans reset usage on a rolling 5-hour window. If you hit rate limits, see the [rate limit configuration](#handling-rate-limits) section.
+</Note>
+
+### AWS Bedrock
+
+Route requests through Amazon Bedrock:
+
+<Steps>
+  <Step title="Configure AWS credentials">
+    Create a Bedrock bearer token following [AWS documentation](https://aws.amazon.com/blogs/machine-learning/accelerate-ai-development-with-amazon-bedrock-api-keys/).
+  </Step>
+  
+  <Step title="Update .env file">
+    ```bash
+    CLAUDE_CODE_USE_BEDROCK=1
+    AWS_REGION=us-east-1
+    AWS_BEARER_TOKEN_BEDROCK=your-bearer-token
+
+    # Set Bedrock-specific model IDs for your region
+    ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+    ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+    ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+    ```
+  </Step>
+  
+  <Step title="Run Shannon">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+
+    Shannon will automatically use Bedrock for all API calls.
+  </Step>
+</Steps>
+
+<Info>
+  Shannon uses three model tiers: **small** (Haiku) for summarization, **medium** (Sonnet) for security analysis, and **large** (Opus) for deep reasoning. Set model IDs for your specific AWS region.
+</Info>
+
+### Google Vertex AI
+
+Route requests through Google Cloud Vertex AI:
+
+<Steps>
+  <Step title="Create service account">
+    1. Go to [GCP Console IAM](https://console.cloud.google.com/iam-admin/serviceaccounts)
+    2. Create a service account with the `roles/aiplatform.user` role
+    3. Download the JSON key file
+  </Step>
+  
+  <Step title="Place credentials">
+    ```bash
+    mkdir -p ./credentials
+    cp /path/to/your-sa-key.json ./credentials/gcp-sa-key.json
+    ```
+  </Step>
+  
+  <Step title="Update .env file">
+    ```bash
+    CLAUDE_CODE_USE_VERTEX=1
+    CLOUD_ML_REGION=us-east5
+    ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project-id
+    GOOGLE_APPLICATION_CREDENTIALS=./credentials/gcp-sa-key.json
+
+    # Set Vertex AI model IDs
+    ANTHROPIC_SMALL_MODEL=claude-haiku-4-5@20251001
+    ANTHROPIC_MEDIUM_MODEL=claude-sonnet-4-6
+    ANTHROPIC_LARGE_MODEL=claude-opus-4-6
+    ```
+  </Step>
+  
+  <Step title="Run Shannon">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  Set `CLOUD_ML_REGION=global` for global endpoints, or a specific region like `us-east5`. Some models may not be available on global endpoints — check the [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) for availability.
+</Info>
+
+## Advanced configuration
+
+### Handling rate limits
+
+If using an Anthropic subscription plan, configure extended retry backoff:
+
+```yaml configs/my-config.yaml
+pipeline:
+  retry_preset: subscription          # Extends max backoff to 6h, 100 retries
+  max_concurrent_pipelines: 2         # Run 2 of 5 pipelines at a time
+```
+
+Add to your start command:
+
+```bash
+./shannon start URL=https://example.com REPO=repo-name CONFIG=./configs/my-config.yaml
+```
+
+<Info>
+  `max_concurrent_pipelines` controls how many vulnerability pipelines run simultaneously (1-5, default: 5). Lower values reduce API usage spikes but increase wall-clock time.
+</Info>
+
+### Experimental router mode
+
+<Warning>
+  This feature is experimental and unsupported. Shannon is optimized for Anthropic Claude models. Alternative providers may produce inconsistent results.
+</Warning>
+
+Test Shannon with GPT or Gemini models:
+
+<Steps>
+  <Step title="Configure provider">
+    Add to `.env`:
+
+    <CodeGroup>
+      ```bash OpenAI
+      OPENAI_API_KEY=sk-your-key
+      ROUTER_DEFAULT=openai,gpt-5.2
+      ```
+
+      ```bash OpenRouter (Gemini)
+      OPENROUTER_API_KEY=sk-or-your-key
+      ROUTER_DEFAULT=openrouter,google/gemini-3-flash-preview
+      ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Run with router">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name ROUTER=true
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Repository not found" icon="folder-open">
+    **Error:** `Repository not found: my-repo`
+    
+    **Solution:** The `REPO` parameter must be a folder name inside `./repos/`, not an absolute path.
+    
+    ```bash
+    # Correct
+    git clone https://github.com/org/repo.git ./repos/my-repo
+    ./shannon start URL=https://example.com REPO=my-repo
+    
+    # Or symlink
+    ln -s /path/to/existing/repo ./repos/my-repo
+    ```
+  </Accordion>
+  
+  <Accordion title="Temporal not ready" icon="clock">
+    **Error:** Connection errors or "Temporal not ready"
+    
+    **Solution:** Wait for health check or check logs:
+    
+    ```bash
+    docker compose logs temporal
+    ```
+    
+    Temporal can take 30-60 seconds to fully initialize on first start.
+  </Accordion>
+  
+  <Accordion title="Worker not processing" icon="gears">
+    **Error:** Workflow starts but never progresses
+    
+    **Solution:** Check container status:
+    
+    ```bash
+    docker compose ps
+    ```
+    
+    Ensure the worker container is running. Restart if needed:
+    
+    ```bash
+    ./shannon stop
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+  </Accordion>
+  
+  <Accordion title="Local apps unreachable" icon="network-wired">
+    **Error:** Cannot connect to `localhost:3000`
+    
+    **Solution:** Docker containers can't reach host's localhost. Use `host.docker.internal`:
+    
+    ```bash
+    ./shannon start URL=http://host.docker.internal:3000 REPO=repo-name
+    ```
+    
+    This works on macOS and Windows. On Linux, configure Docker network or use host network mode.
+  </Accordion>
+  
+  <Accordion title="Permission errors (Linux)" icon="lock">
+    **Error:** Permission denied errors with Docker or output files
+    
+    **Solution:** Add your user to the docker group:
+    
+    ```bash
+    sudo usermod -aG docker $USER
+    newgrp docker
+    ```
+    
+    For output file permissions, ensure proper ownership:
+    
+    ```bash
+    sudo chown -R $USER:$USER audit-logs/
+    ```
+  </Accordion>
+  
+  <Accordion title="Rate limit errors" icon="gauge-high">
+    **Error:** 429 Rate Limit errors from Anthropic
+    
+    **Solution:** Configure extended retry and reduce concurrency:
+    
+    ```yaml configs/my-config.yaml
+    pipeline:
+      retry_preset: subscription
+      max_concurrent_pipelines: 2
+    ```
+    
+    Then run:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name CONFIG=./configs/my-config.yaml
+    ```
+  </Accordion>
+  
+  <Accordion title="Clean state reset" icon="broom">
+    **Error:** Need to completely reset Shannon state
+    
+    **Solution:** Full cleanup removes all containers, volumes, and data:
+    
+    ```bash
+    ./shannon stop CLEAN=true
+    ```
+    
+    This will delete all workflow data, audit logs, and Docker volumes.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first pentest with Shannon
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Configure authentication, 2FA, and testing parameters
+  </Card>
+  
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Learn how Shannon's multi-agent system works
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/cli/commands">
+    Complete command-line interface documentation
+  </Card>
+</CardGroup>

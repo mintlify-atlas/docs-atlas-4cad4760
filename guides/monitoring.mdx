@@ -1,0 +1,540 @@
+---
+title: Monitoring
+description: Track Shannon execution with logs, Temporal Web UI, and workflow queries
+---
+
+Shannon provides multiple ways to monitor penetration test execution in real-time: workflow logs, Temporal Web UI, and direct queries.
+
+## Quick Monitoring Commands
+
+<CodeGroup>
+```bash View Real-Time Logs
+# Tail workflow log (most common)
+./shannon logs ID=example-com_shannon-1771007534808
+
+# Tail with auto-discovery (for named workspaces)
+./shannon logs ID=q1-audit
+```
+
+```bash List All Workspaces
+# Show status, duration, cost
+./shannon workspaces
+```
+
+```bash Temporal Web UI
+# Open in browser
+open http://localhost:8233
+```
+</CodeGroup>
+
+## Workflow Logs
+
+The primary way to monitor Shannon execution is through workflow logs.
+
+### Viewing Logs
+
+<Steps>
+  <Step title="Get Workspace ID">
+    When you start Shannon, it outputs the workspace ID:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+    
+    Output:
+    ```
+    Workflow ID: example-com_shannon-1771007534808
+    Logs:        ./shannon logs ID=example-com_shannon-1771007534808
+    ```
+  </Step>
+  
+  <Step title="Tail Logs">
+    ```bash
+    ./shannon logs ID=example-com_shannon-1771007534808
+    ```
+    
+    Logs stream in real-time as Shannon executes.
+  </Step>
+</Steps>
+
+### Log Format
+
+Workflow logs are human-readable and show:
+
+- **Timestamps** - When each event occurred
+- **Phase transitions** - Moving between Pre-Recon, Recon, Analysis, etc.
+- **Agent status** - Starting, running, completed, failed
+- **Tool usage** - Browser actions, API calls, file operations
+- **Errors** - Failures, retries, timeouts
+
+<CodeGroup>
+```log Example Output
+[2026-03-03 10:15:23] Starting workflow: example-com_shannon-1771007534808
+[2026-03-03 10:15:23] Target URL: https://example.com
+[2026-03-03 10:15:23] Repository: /repos/my-app
+[2026-03-03 10:15:23] ========================================
+[2026-03-03 10:15:23] Phase 1: Pre-Reconnaissance
+[2026-03-03 10:15:23] ========================================
+[2026-03-03 10:15:24] Agent: pre-recon (running)
+[2026-03-03 10:15:24] 🔍 Scanning target with nmap...
+[2026-03-03 10:15:45] ✅ Found 3 open ports: 80, 443, 22
+[2026-03-03 10:16:12] 🌐 Browser: Navigating to https://example.com
+[2026-03-03 10:16:18] 📜 Analyzing source code structure...
+[2026-03-03 10:22:34] Agent: pre-recon (completed)
+[2026-03-03 10:22:34] ========================================
+[2026-03-03 10:22:34] Phase 2: Reconnaissance
+[2026-03-03 10:22:34] ========================================
+[2026-03-03 10:22:35] Agent: recon (running)
+```
+
+```log With Errors
+[2026-03-03 11:45:12] Agent: vuln-injection (running)
+[2026-03-03 11:45:23] 🔧 Attempting SQL injection on /api/users
+[2026-03-03 11:45:28] ❌ Request failed: Connection timeout
+[2026-03-03 11:45:28] 🔁 Retrying (1/3)...
+[2026-03-03 11:45:35] ✅ Request succeeded
+[2026-03-03 11:45:40] 🚨 Found SQL injection vulnerability
+[2026-03-03 11:52:18] Agent: vuln-injection (completed)
+```
+</CodeGroup>
+
+### Log File Location
+
+Workflow logs are saved to:
+
+```
+audit-logs/<workspace-id>/workflow.log
+```
+
+For custom output directories (using `OUTPUT=`), logs are saved to:
+
+```
+<output-path>/<workspace-id>/workflow.log
+```
+
+### Auto-Discovery
+
+The `./shannon logs` command automatically finds log files:
+
+1. Checks default location: `./audit-logs/<id>/workflow.log`
+2. Handles resume workflow IDs: `workspace_resume_123`
+3. Searches custom output directories
+4. Falls back to `find` for non-standard locations
+
+<Tabs>
+  <Tab title="Named Workspace">
+    ```bash
+    # Start with named workspace
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+    
+    # Tail logs (auto-discovers)
+    ./shannon logs ID=q1-audit
+    ```
+  </Tab>
+  
+  <Tab title="Auto-Named Workspace">
+    ```bash
+    # Start without name
+    ./shannon start URL=https://example.com REPO=repo-name
+    # Workspace: example-com_shannon-1771007534808
+    
+    # Tail logs with full ID
+    ./shannon logs ID=example-com_shannon-1771007534808
+    ```
+  </Tab>
+  
+  <Tab title="Custom Output">
+    ```bash
+    # Start with custom output
+    ./shannon start URL=https://example.com REPO=repo-name OUTPUT=./my-reports
+    
+    # Logs still auto-discovered
+    ./shannon logs ID=example-com_shannon-1771007534808
+    ```
+  </Tab>
+</Tabs>
+
+## Temporal Web UI
+
+Shannon uses Temporal for workflow orchestration. The Temporal Web UI provides detailed execution visibility.
+
+### Accessing the UI
+
+Open in your browser:
+
+```
+http://localhost:8233
+```
+
+<Note>
+**For WSL2 Users**
+
+If running Shannon in WSL2, find your WSL IP address:
+
+```bash
+ip addr
+```
+
+Then navigate to `http://<wsl-ip>:8233` from your Windows browser.
+</Note>
+
+### UI Features
+
+<CardGroup cols={2}>
+  <Card title="Workflow List" icon="list">
+    View all running and completed workflows
+  </Card>
+  <Card title="Execution History" icon="clock-rotate-left">
+    Timeline of all events and activities
+  </Card>
+  <Card title="Activity Details" icon="magnifying-glass">
+    Input/output for each agent execution
+  </Card>
+  <Card title="Error Inspection" icon="bug">
+    Stack traces and failure details
+  </Card>
+</CardGroup>
+
+### Finding Your Workflow
+
+<Steps>
+  <Step title="Open Temporal UI">
+    Navigate to [http://localhost:8233](http://localhost:8233)
+  </Step>
+  
+  <Step title="Select Namespace">
+    Use the `default` namespace (auto-selected)
+  </Step>
+  
+  <Step title="Search by Workflow ID">
+    Enter your workspace ID in the search bar:
+    
+    ```
+    example-com_shannon-1771007534808
+    ```
+  </Step>
+  
+  <Step title="View Execution">
+    Click the workflow to see:
+    - Current status (Running, Completed, Failed)
+    - Execution history timeline
+    - Input parameters
+    - Stack trace for errors
+  </Step>
+</Steps>
+
+### Key Views
+
+<Tabs>
+  <Tab title="History">
+    Timeline of all events:
+    - Workflow started
+    - Activity scheduled
+    - Activity started
+    - Activity completed
+    - Activity failed
+    - Workflow completed
+    
+    Click any event to see input/output payloads.
+  </Tab>
+  
+  <Tab title="Pending Activities">
+    Shows currently executing activities:
+    - Activity name (e.g., `executePipelineStep`)
+    - Start time
+    - Duration so far
+    - Heartbeat status
+  </Tab>
+  
+  <Tab title="Stack Trace">
+    For failed workflows:
+    - Error message
+    - Stack trace
+    - Failed activity details
+    - Retry history
+  </Tab>
+  
+  <Tab title="Query">
+    Run workflow queries:
+    - `getProgress` - Current phase and agent status
+    - Custom queries (if defined)
+  </Tab>
+</Tabs>
+
+## Workflow Queries
+
+Query workflow state programmatically using the Temporal client.
+
+### Progress Query
+
+```bash
+# Query current progress (requires workflow ID)
+./shannon query ID=example-com_shannon-1771007534808
+```
+
+Output:
+```json
+{
+  "currentPhase": "vulnerability-analysis",
+  "completedAgents": ["pre-recon", "recon"],
+  "currentAgent": "vuln-injection",
+  "status": "running",
+  "startTime": "2026-03-03T10:15:23Z",
+  "duration": "32m 18s"
+}
+```
+
+<Warning>
+**Query Command Not Implemented**
+
+The `./shannon query` command shown above is for illustration. To query workflow state, use the Temporal Web UI or implement a custom query client.
+
+See `src/temporal/shared.ts` for the `PROGRESS_QUERY` definition and `src/temporal/workflows.ts` for query handlers.
+</Warning>
+
+## Workspace Listing
+
+View all workspaces with status, duration, and cost:
+
+```bash
+./shannon workspaces
+```
+
+Output:
+```
+=== Shannon Workspaces ===
+
+  WORKSPACE                      URL                            STATUS         DURATION   COST      
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  q1-audit                       https://example.com            in-progress    45m        $32.50    (resumable)
+  example-com_shannon-17710...   https://example.com            failed         12m        $8.20     (resumable)
+  prod-scan-2026                 https://prod.example.com       completed      1h 15m     $48.90    
+
+3 workspaces found (2 resumable)
+
+Resume with: ./shannon start URL=<url> REPO=<repo> WORKSPACE=<name>
+```
+
+### Status Indicators
+
+<ResponseField name="in-progress" type="Running">
+  Workflow is currently executing
+</ResponseField>
+
+<ResponseField name="completed" type="Success">
+  All agents finished successfully
+</ResponseField>
+
+<ResponseField name="failed" type="Error">
+  Workflow encountered an error or was interrupted
+</ResponseField>
+
+### Workspace Metadata
+
+Each workspace directory contains `session.json` with execution metadata:
+
+```json
+{
+  "session": {
+    "id": "example-com_shannon-1771007534808",
+    "webUrl": "https://example.com",
+    "status": "in-progress",
+    "createdAt": "2026-03-03T10:15:23.000Z",
+    "completedAt": null
+  },
+  "metrics": {
+    "total_cost_usd": 32.50,
+    "total_duration_ms": 2718000,
+    "completed_agents": ["pre-recon", "recon"],
+    "failed_agents": []
+  }
+}
+```
+
+## Agent Logs
+
+Individual agent execution logs are saved to:
+
+```
+audit-logs/<workspace-id>/agents/<agent-name>.log
+```
+
+These logs contain:
+- Detailed tool usage
+- LLM prompts and responses (excerpts)
+- Error details
+- Retry attempts
+
+### Viewing Agent Logs
+
+<CodeGroup>
+```bash Tail Specific Agent
+tail -f audit-logs/q1-audit/agents/vuln-injection.log
+```
+
+```bash View All Agent Logs
+ls audit-logs/q1-audit/agents/
+# Output:
+# pre-recon.log
+# recon.log
+# vuln-injection.log
+# vuln-xss.log
+# ...
+```
+
+```bash Search Across Agents
+grep -r "SQL injection" audit-logs/q1-audit/agents/
+```
+</CodeGroup>
+
+## Monitoring Best Practices
+
+<Steps>
+  <Step title="Keep Logs Running">
+    Open `./shannon logs` in a separate terminal window to monitor progress in real-time:
+    
+    ```bash
+    # Terminal 1: Start Shannon
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+    
+    # Terminal 2: Watch logs
+    ./shannon logs ID=my-audit
+    ```
+  </Step>
+  
+  <Step title="Check Temporal UI Periodically">
+    Use the Temporal Web UI to:
+    - Verify heartbeats are active (no stuck activities)
+    - Check for retry patterns (may indicate issues)
+    - Inspect failed activities for detailed errors
+  </Step>
+  
+  <Step title="Save Logs for Analysis">
+    Copy logs before running `./shannon stop CLEAN=true`:
+    
+    ```bash
+    cp -r audit-logs/my-audit ./archived-audits/
+    ```
+  </Step>
+  
+  <Step title="Monitor Resource Usage">
+    Shannon runs in Docker. Monitor container resources:
+    
+    ```bash
+    docker stats
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Logs not found for workflow ID">
+    **Error:**
+    ```
+    ERROR: Workflow log not found for ID: my-audit
+    ```
+    
+    **Causes:**
+    - Workflow hasn't started yet (check Temporal UI)
+    - Incorrect workspace ID (use `./shannon workspaces` to list)
+    - Custom output directory not searched (specify full path)
+    
+    **Solution:** Verify workspace name with `./shannon workspaces` or check Temporal UI.
+  </Accordion>
+  
+  <Accordion title="Temporal UI not accessible">
+    **Issue:** Can't access http://localhost:8233
+    
+    **Causes:**
+    - Containers not running
+    - Port conflict on 8233
+    - WSL2 networking (use WSL IP instead of localhost)
+    
+    **Solution:**
+    ```bash
+    # Check if containers are running
+    docker compose ps
+    
+    # Ensure Temporal is up
+    ./shannon start URL=https://example.com REPO=repo-name
+    
+    # For WSL2, get IP
+    ip addr
+    ```
+  </Accordion>
+  
+  <Accordion title="Agent stuck (no log updates)">
+    **Issue:** Logs stop updating, agent appears frozen
+    
+    **Check in Temporal UI:**
+    - Pending activities with long duration (>30min)
+    - Heartbeat status (should be periodic)
+    - Failed heartbeats (indicates stuck activity)
+    
+    **Solution:**
+    - Wait for timeout/retry (automatic)
+    - Manual stop and resume if timeout is too long
+    ```bash
+    ./shannon stop
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+    ```
+  </Accordion>
+  
+  <Accordion title="High API costs">
+    **Issue:** Costs increasing rapidly
+    
+    **Check:**
+    - `session.json` for `total_cost_usd`
+    - Agent logs for excessive retries
+    - Temporal UI for failed activities
+    
+    **Solution:**
+    - Reduce `max_concurrent_pipelines` in config
+    - Use smaller models (if overridden)
+    - Stop and review before continuing
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring Checklist
+
+Before starting a production audit:
+
+<Steps>
+  <Step title="Verify Containers Running">
+    ```bash
+    docker compose ps
+    # Should show: temporal, worker (running)
+    ```
+  </Step>
+  
+  <Step title="Open Temporal UI">
+    Ensure http://localhost:8233 is accessible
+  </Step>
+  
+  <Step title="Start Log Tail">
+    ```bash
+    ./shannon logs ID=<workspace-id>
+    ```
+    
+    Keep this terminal open throughout the run.
+  </Step>
+  
+  <Step title="Bookmark Workspace">
+    Save workspace ID for later reference:
+    ```bash
+    echo "my-audit" > .current-workspace
+    ```
+  </Step>
+</Steps>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Resume Workflow" icon="rotate-right" href="/guides/resume-workflow">
+    Resume interrupted runs from checkpoints
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Adjust retry and concurrency settings
+  </Card>
+</CardGroup>

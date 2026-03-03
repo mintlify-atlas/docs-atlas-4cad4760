@@ -1,0 +1,541 @@
+---
+title: Command Options
+description: Detailed reference for all CLI command options and parameters
+---
+
+Shannon CLI uses a `KEY=value` argument syntax for all options. This page documents every available option across all commands.
+
+## Global Concepts
+
+### Argument Syntax
+
+All Shannon CLI options use the format `KEY=value` after the command:
+
+```bash
+./shannon <command> KEY1=value1 KEY2=value2
+```
+
+Multiple options can be combined in any order:
+
+```bash
+./shannon start URL=https://example.com REPO=my-repo WORKSPACE=audit CONFIG=./config.yaml
+```
+
+### Boolean Options
+
+Boolean flags are set using `true` or omitted entirely (defaults to `false`):
+
+```bash
+# Enable option
+./shannon start URL=https://example.com REPO=my-repo PIPELINE_TESTING=true
+
+# Option disabled (default)
+./shannon start URL=https://example.com REPO=my-repo
+```
+
+---
+
+## start Command Options
+
+Options for `./shannon start` command.
+
+### URL
+
+<ParamField path="URL" type="string" required>
+  Target URL to test
+  
+  **Format:** Must be a complete URL including protocol
+  
+  **Examples:**
+  - `URL=https://example.com`
+  - `URL=https://staging.example.com:8443`
+  - `URL=http://localhost:3000`
+  
+  **Notes:**
+  - For local applications running on the host machine, use `http://host.docker.internal:PORT` instead of `localhost`
+  - The URL is used to generate default workspace names: `{hostname}_{timestamp}`
+</ParamField>
+
+### REPO
+
+<ParamField path="REPO" type="string" required>
+  Repository folder name under `./repos/`
+  
+  **Format:** Folder name only, not an absolute path
+  
+  **Setup:**
+  ```bash
+  # Clone repository to ./repos/
+  git clone https://github.com/org/repo.git ./repos/my-repo
+  
+  # Or symlink existing repository
+  ln -s /path/to/existing/repo ./repos/my-repo
+  
+  # Then use folder name as REPO value
+  ./shannon start URL=https://example.com REPO=my-repo
+  ```
+  
+  **Container Mapping:**
+  - Host path: `./repos/my-repo`
+  - Container path: `/repos/my-repo`
+  
+  **Deliverables:**
+  - Saved to `./repos/{REPO}/deliverables/` directory
+  - Automatically created with write permissions (chmod 777)
+</ParamField>
+
+### CONFIG
+
+<ParamField path="CONFIG" type="string">
+  Path to YAML configuration file
+  
+  **Format:** Relative or absolute path to `.yaml` file
+  
+  **Example:**
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo CONFIG=./configs/production.yaml
+  ```
+  
+  **Configuration Structure:**
+  ```yaml
+  auth:
+    type: form  # or 'sso', 'api', 'basic'
+    username: testuser@example.com
+    password: testpass123
+    
+  mfa:
+    enabled: true
+    totp_secret: JBSWY3DPEHPK3PXP
+    
+  testing:
+    skip_destructive: false
+    max_concurrent: 5
+    timeout_minutes: 30
+  ```
+  
+  **Validation:**
+  - Validated against JSON Schema (`config-schema.json`)
+  - Invalid configs will fail at workflow start
+  
+  **See Also:** Configuration documentation for complete schema reference
+</ParamField>
+
+### OUTPUT
+
+<ParamField path="OUTPUT" type="string" default="./audit-logs/">
+  Custom output directory for reports and logs
+  
+  **Format:** Relative or absolute path
+  
+  **Examples:**
+  ```bash
+  # Relative path
+  ./shannon start URL=https://example.com REPO=my-repo OUTPUT=./reports
+  
+  # Absolute path
+  ./shannon start URL=https://example.com REPO=my-repo OUTPUT=/tmp/shannon-reports
+  ```
+  
+  **Behavior:**
+  - Directory is created automatically if it doesn't exist
+  - Permissions set to 777 for container write access (UID 1001)
+  - Worker container is refreshed if OUTPUT changes to ensure correct volume mount
+  
+  **Structure:**
+  ```
+  {OUTPUT}/
+  └── {workspace-id}/
+      ├── workflow.log           # Human-readable workflow log
+      ├── session.json           # Session metadata and state
+      ├── pre-recon/             # Per-agent logs and outputs
+      ├── recon/
+      ├── vuln-*/
+      ├── exploit-*/
+      └── report/
+  ```
+  
+  **Container Mapping:**
+  - Host path: `{OUTPUT}`
+  - Container path: `/app/output`
+</ParamField>
+
+### WORKSPACE
+
+<ParamField path="WORKSPACE" type="string">
+  Named workspace identifier for organization and resuming
+  
+  **Format:** Alphanumeric string with hyphens/underscores
+  
+  **Behavior:**
+  - **New workspace:** Creates workspace with specified name if it doesn't exist
+  - **Resume:** Automatically resumes if workspace exists (same command)
+  - **Auto-naming:** Without this option, workspaces are named `{hostname}_{timestamp}`
+  
+  **Examples:**
+  ```bash
+  # Create new named workspace
+  ./shannon start URL=https://example.com REPO=my-repo WORKSPACE=q1-audit
+  
+  # Resume existing workspace (identical command)
+  ./shannon start URL=https://example.com REPO=my-repo WORKSPACE=q1-audit
+  
+  # Auto-named workspace (no WORKSPACE option)
+  ./shannon start URL=https://example.com REPO=my-repo
+  # Creates: example.com_shannon-1234567890
+  ```
+  
+  **Resume Behavior:**
+  - Loads `session.json` to detect completed agents
+  - Validates deliverable existence
+  - Restores git checkpoints
+  - Cleans up incomplete deliverables
+  - Skips completed phases automatically
+  
+  **Listing Workspaces:**
+  ```bash
+  ./shannon workspaces
+  ```
+</ParamField>
+
+### PIPELINE_TESTING
+
+<ParamField path="PIPELINE_TESTING" type="boolean" default="false">
+  Enable fast testing mode with minimal prompts
+  
+  **Purpose:** Development and testing iteration
+  
+  **Changes:**
+  - Shorter, simplified prompts for each phase
+  - Reduced retry intervals (10 seconds vs production timeouts)
+  - Faster agent execution
+  - Same workflow structure (all phases still run)
+  
+  **Example:**
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo PIPELINE_TESTING=true
+  ```
+  
+  **Warning:** Not for production use. Testing mode may skip important analysis steps.
+</ParamField>
+
+### ROUTER
+
+<ParamField path="ROUTER" type="boolean" default="false">
+  Enable multi-model routing through `claude-code-router`
+  
+  **Purpose:** Use alternative LLM providers (OpenAI, OpenRouter, etc.)
+  
+  **Requirements:**
+  - Provider API key in `.env` (see Environment Variables)
+  - `claude-code-router` Docker image
+  
+  **Example:**
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo ROUTER=true
+  ```
+  
+  **Behavior:**
+  - Starts `router` container (Docker compose profile)
+  - Sets `ANTHROPIC_BASE_URL=http://router:3456`
+  - Routes all Claude API calls through router
+  - Router translates to target provider's API
+  
+  **Provider Configuration:**
+  
+  <Accordion title="OpenAI">
+    ```bash
+    # .env
+    OPENAI_API_KEY=sk-your-openai-key
+    ROUTER_DEFAULT=openai,gpt-5.2
+    ```
+  </Accordion>
+  
+  <Accordion title="OpenRouter (Gemini, etc.)">
+    ```bash
+    # .env
+    OPENROUTER_API_KEY=sk-or-your-openrouter-key
+    ROUTER_DEFAULT=openrouter,google/gemini-3-flash-preview
+    ```
+  </Accordion>
+  
+  **See Also:** `claude-code-router` documentation for advanced routing configurations
+</ParamField>
+
+### REBUILD
+
+<ParamField path="REBUILD" type="boolean" default="false">
+  Force Docker image rebuild with `--no-cache`
+  
+  **Purpose:** Ensure code changes are picked up when Docker layer caching causes issues
+  
+  **Example:**
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo REBUILD=true
+  ```
+  
+  **Behavior:**
+  - Runs `docker compose build --no-cache worker`
+  - Rebuilds all layers from scratch
+  - Significantly slower than normal builds
+  
+  **Use Cases:**
+  - Changed dependencies in `package.json`
+  - Modified Dockerfile
+  - Updated system packages
+  - Debugging caching issues
+  
+  **Output:**
+  ```
+  Rebuilding with --no-cache...
+  [+] Building 45.3s (18/18) FINISHED
+  Starting Shannon containers...
+  ```
+</ParamField>
+
+---
+
+## stop Command Options
+
+Options for `./shannon stop` command.
+
+### CLEAN
+
+<ParamField path="CLEAN" type="boolean" default="false">
+  Remove all data including Docker volumes
+  
+  **Default Behavior (CLEAN not set):**
+  - Stops all containers
+  - Preserves Temporal workflow state
+  - Preserves PostgreSQL data
+  - Preserves audit logs in `./audit-logs/`
+  - Allows resuming workflows after restart
+  
+  **With CLEAN=true:**
+  - Stops all containers
+  - Removes Docker volumes (`postgres-data`, `temporal-data`)
+  - Deletes workflow history and state
+  - **Does NOT** remove `./audit-logs/` directory
+  - Fresh state on next `./shannon start`
+  
+  **Examples:**
+  ```bash
+  # Stop and preserve data (default)
+  ./shannon stop
+  
+  # Complete cleanup
+  ./shannon stop CLEAN=true
+  ```
+  
+  **Use Cases for CLEAN=true:**
+  - Complete reset of Shannon environment
+  - Clearing old workflow data
+  - Troubleshooting Temporal state issues
+  - Freeing disk space
+  
+  **Warning:** Cannot resume workflows after `CLEAN=true`. Audit logs are preserved but workflow state is lost.
+</ParamField>
+
+---
+
+## logs Command Options
+
+Options for `./shannon logs` command.
+
+### ID
+
+<ParamField path="ID" type="string" required>
+  Workflow ID to display logs for
+  
+  **Format:** `{hostname}_{sessionId}` or workspace name
+  
+  **Finding Workflow IDs:**
+  
+  <Accordion title="From start command output">
+    ```bash
+    ./shannon start URL=https://example.com REPO=my-repo
+    
+    # Output includes:
+    ✓ Workflow started: example.com_shannon-1234567890
+    ```
+    
+    Use the workflow ID:
+    ```bash
+    ./shannon logs ID=example.com_shannon-1234567890
+    ```
+  </Accordion>
+  
+  <Accordion title="From workspaces list">
+    ```bash
+    ./shannon workspaces
+    
+    # Output shows workspace names
+    Name: q1-audit
+    ...
+    
+    # Use workspace name as ID
+    ./shannon logs ID=q1-audit
+    ```
+  </Accordion>
+  
+  <Accordion title="From Temporal Web UI">
+    Visit http://localhost:8233 and copy the workflow ID from the UI
+  </Accordion>
+  
+  **Log File Discovery:**
+  - Searches `./audit-logs/{ID}/workflow.log` first
+  - Handles resume workflow IDs (`workspace_resume_123`)
+  - Searches custom OUTPUT directories (up to 3 levels)
+  - Falls back to `find` command for deep search
+  
+  **Examples:**
+  ```bash
+  # Auto-named workspace
+  ./shannon logs ID=example.com_shannon-1234567890
+  
+  # Named workspace
+  ./shannon logs ID=q1-audit
+  
+  # Resume workflow (finds original workspace logs)
+  ./shannon logs ID=q1-audit_resume_456
+  ```
+</ParamField>
+
+---
+
+## Option Validation
+
+### Required vs Optional
+
+<Accordion title="start command validation">
+  **Required:**
+  - `URL` - Must be present
+  - `REPO` - Must be present and exist in `./repos/`
+  
+  **Conditionally Required (Auth):**
+  
+  At least one auth method must be configured in `.env`:
+  - `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` (default)
+  - OR `CLAUDE_CODE_USE_BEDROCK=1` with AWS credentials
+  - OR `CLAUDE_CODE_USE_VERTEX=1` with GCP credentials
+  - OR `ROUTER=true` with provider API key
+  
+  **All Others:** Optional with sensible defaults
+</Accordion>
+
+<Accordion title="logs command validation">
+  **Required:**
+  - `ID` - Must be present
+  
+  **Note:** ID validation happens when searching for log file. Invalid IDs show helpful error message.
+</Accordion>
+
+### Path Handling
+
+<Accordion title="Repository paths">
+  **REPO option:**
+  - Must be a folder name (e.g., `my-repo`)
+  - NOT an absolute path (e.g., `/path/to/repo`)
+  - Resolved to `./repos/{REPO}` on host
+  - Mounted as `/repos/{REPO}` in container
+  
+  **Special cases:**
+  - Benchmark paths starting with `/benchmarks/*` used as-is
+  - Paths starting with `/repos/*` used as-is (advanced usage)
+</Accordion>
+
+<Accordion title="Output paths">
+  **OUTPUT option:**
+  - Can be relative: `./reports`, `../output`
+  - Can be absolute: `/tmp/shannon-output`
+  - Created automatically if missing
+  - Permissions set to 777 for container access
+  - Mounted as `/app/output` in container
+</Accordion>
+
+<Accordion title="Config paths">
+  **CONFIG option:**
+  - Relative to current working directory
+  - Must exist and be readable
+  - Passed as absolute path to container
+</Accordion>
+
+---
+
+## Examples by Use Case
+
+<Accordion title="Quick local test">
+  ```bash
+  ./shannon start \
+    URL=http://host.docker.internal:3000 \
+    REPO=my-app \
+    PIPELINE_TESTING=true
+  ```
+  
+  Fast testing mode for local application running on port 3000.
+</Accordion>
+
+<Accordion title="Production audit with custom config">
+  ```bash
+  ./shannon start \
+    URL=https://app.example.com \
+    REPO=example-app \
+    WORKSPACE=prod-audit-2026-q1 \
+    CONFIG=./configs/production.yaml \
+    OUTPUT=./audits/2026-q1
+  ```
+  
+  Full production audit with organization and custom settings.
+</Accordion>
+
+<Accordion title="Resume interrupted workflow">
+  ```bash
+  # Original run
+  ./shannon start \
+    URL=https://example.com \
+    REPO=my-repo \
+    WORKSPACE=my-audit
+  
+  # Later: resume with identical command
+  ./shannon start \
+    URL=https://example.com \
+    REPO=my-repo \
+    WORKSPACE=my-audit
+  ```
+  
+  Automatically resumes from last checkpoint.
+</Accordion>
+
+<Accordion title="Multi-model routing with OpenAI">
+  ```bash
+  # .env setup
+  echo "OPENAI_API_KEY=sk-..." >> .env
+  echo "ROUTER_DEFAULT=openai,gpt-5.2" >> .env
+  
+  # Run with router
+  ./shannon start \
+    URL=https://example.com \
+    REPO=my-repo \
+    ROUTER=true
+  ```
+  
+  Routes all requests through OpenAI instead of Anthropic.
+</Accordion>
+
+<Accordion title="AWS Bedrock with custom models">
+  ```bash
+  # .env setup
+  cat >> .env << EOF
+  CLAUDE_CODE_USE_BEDROCK=1
+  AWS_REGION=us-east-1
+  AWS_BEARER_TOKEN_BEDROCK=your-token
+  ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+  ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+  ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+  EOF
+  
+  # Run (no special flags needed)
+  ./shannon start URL=https://example.com REPO=my-repo
+  ```
+  
+  Uses AWS Bedrock with region-specific model IDs.
+</Accordion>

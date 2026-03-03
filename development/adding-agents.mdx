@@ -1,0 +1,378 @@
+---
+title: 'Adding Agents'
+description: 'How to add new vulnerability detection agents to Shannon'
+---
+
+This guide walks through the process of adding a new agent to Shannon's pipeline.
+
+## Overview
+
+Shannon's architecture is designed to be extensible. Each agent is a specialized AI worker that analyzes a specific vulnerability class and produces deliverables for the next phase.
+
+## Agent Structure
+
+Every agent has:
+
+- **Name** - Unique identifier (e.g., `injection-vuln`, `xss-exploit`)
+- **Prerequisites** - Agents that must complete before this one runs
+- **Prompt Template** - Instructions for the AI (stored in `prompts/`)
+- **Deliverable** - Output file(s) produced by the agent
+- **Model Tier** - small/medium/large (default: medium)
+
+## Step-by-Step Guide
+
+### Step 1: Define the Agent
+
+Add your agent to the `AGENTS` registry in `src/session-manager.ts`:
+
+```typescript src/session-manager.ts
+export const AGENTS: Record<AgentName, AgentDefinition> = {
+  // ... existing agents
+  
+  'newtype-vuln': {
+    name: 'newtype-vuln',
+    displayName: 'New Vulnerability Type Agent',
+    prerequisites: ['recon'],  // Depends on recon phase
+    promptTemplate: 'vuln-newtype',  // References prompts/vuln-newtype.txt
+    deliverableFilename: 'newtype_analysis_deliverable.md',
+    modelTier: 'medium',  // Optional: 'small' | 'medium' | 'large'
+  },
+  
+  'newtype-exploit': {
+    name: 'newtype-exploit',
+    displayName: 'New Vulnerability Exploit Agent',
+    prerequisites: ['newtype-vuln'],  // Depends on vuln phase
+    promptTemplate: 'exploit-newtype',
+    deliverableFilename: 'newtype_exploitation_evidence.md',
+    modelTier: 'medium',
+  },
+};
+```
+
+### Step 2: Update Agent Types
+
+Add the new agent names to `src/types/agents.ts`:
+
+```typescript src/types/agents.ts
+export const ALL_AGENTS = [
+  'pre-recon',
+  'recon',
+  // ... existing agents
+  'newtype-vuln',
+  'newtype-exploit',
+  'report',
+] as const;
+
+export type AgentName = (typeof ALL_AGENTS)[number];
+```
+
+### Step 3: Create Prompt Templates
+
+Create your prompt template files in `prompts/`:
+
+**Vulnerability Analysis Prompt** (`prompts/vuln-newtype.txt`):
+
+```txt prompts/vuln-newtype.txt
+<role>
+You are a New Vulnerability Type Analysis Specialist.
+</role>
+
+<objective>
+Your mission is to identify where [describe the vulnerability pattern].
+Success criterion: Complete analysis with exploitation queue.
+</objective>
+
+<scope>
+@include(shared/_vuln-scope.txt)
+</scope>
+
+<target>
+@include(shared/_target.txt)
+</target>
+
+<rules>
+@include(shared/_rules.txt)
+</rules>
+
+<login_instructions>
+{{LOGIN_INSTRUCTIONS}}
+</login_instructions>
+
+<starting_context>
+- Your single source of truth is `deliverables/recon_deliverable.md`
+- Analyze [specific aspects of the application]
+</starting_context>
+
+<methodology>
+1. [Step 1 of analysis]
+2. [Step 2 of analysis]
+3. Document findings in exploitation queue
+</methodology>
+
+<deliverables>
+1. Save analysis to `deliverables/newtype_analysis_deliverable.md`
+2. Save exploitation queue to `deliverables/newtype_exploitation_queue.json`
+</deliverables>
+```
+
+**Exploitation Prompt** (`prompts/exploit-newtype.txt`):
+
+```txt prompts/exploit-newtype.txt
+<role>
+You are a New Vulnerability Type Exploitation Specialist.
+</role>
+
+<objective>
+Your mission is to prove the exploitability of hypotheses from the analysis phase.
+Success criterion: Validated exploits with evidence.
+</objective>
+
+<scope>
+@include(shared/_exploit-scope.txt)
+</scope>
+
+<target>
+@include(shared/_target.txt)
+</target>
+
+<starting_context>
+- Load hypotheses from `deliverables/newtype_exploitation_queue.json`
+- Only report successfully exploited vulnerabilities
+</starting_context>
+
+<methodology>
+1. Load exploitation queue
+2. For each hypothesis:
+   - Attempt exploitation
+   - Capture evidence if successful
+   - Document in deliverable
+3. Follow "No Exploit, No Report" policy
+</methodology>
+
+<deliverables>
+Save evidence to `deliverables/newtype_exploitation_evidence.md`
+</deliverables>
+```
+
+### Step 4: Assign MCP Server
+
+Add your agents to the MCP server mapping in `src/session-manager.ts`:
+
+```typescript src/session-manager.ts
+export const MCP_AGENT_MAPPING: Record<string, PlaywrightAgent> = {
+  // ... existing mappings
+  
+  // Assign Playwright instances to avoid conflicts
+  'vuln-newtype': 'playwright-agent1',
+  'exploit-newtype': 'playwright-agent1',  // Same instance as vuln for consistency
+};
+```
+
+<Note>
+Available Playwright agents: `playwright-agent1` through `playwright-agent5`. Agents that run in parallel must use different instances.
+</Note>
+
+### Step 5: Create Activity Wrappers
+
+Add thin activity wrappers in `src/temporal/activities.ts`:
+
+```typescript src/temporal/activities.ts
+export async function executeNewtypeVulnAgent(input: ActivityInput): Promise<AgentMetrics> {
+  return executeGenericAgent(input);
+}
+
+export async function executeNewtypeExploitAgent(input: ActivityInput): Promise<AgentMetrics> {
+  return executeGenericAgent(input);
+}
+```
+
+The `executeGenericAgent` function handles:
+- Heartbeat loop for crash recovery
+- Error classification
+- Agent lifecycle via `AgentExecutionService`
+
+### Step 6: Register in Workflow
+
+Add activities to the workflow in `src/temporal/workflows.ts`:
+
+```typescript src/temporal/workflows.ts
+const {
+  // ... existing activities
+  executeNewtypeVulnAgent,
+  executeNewtypeExploitAgent,
+} = acts;  // or testActs or subscriptionActs
+
+// In the vulnerability analysis phase:
+const vulnResults = await Promise.all([
+  // ... existing vuln agents
+  executeNewtypeVulnAgent({ ...baseInput, agentName: 'newtype-vuln' }),
+]);
+
+// In the exploitation phase:
+const exploitResults = await Promise.all([
+  // ... existing exploit agents
+  executeNewtypeExploitAgent({ ...baseInput, agentName: 'newtype-exploit' }),
+]);
+```
+
+### Step 7: Update Phase Mapping
+
+Add your agents to the phase mapping in `src/session-manager.ts`:
+
+```typescript src/session-manager.ts
+export const AGENT_PHASE_MAP: Record<AgentName, PhaseName> = {
+  // ... existing mappings
+  'newtype-vuln': 'vulnerability-analysis',
+  'newtype-exploit': 'exploitation',
+};
+```
+
+### Step 8: Create Validators (Optional)
+
+If your agent produces special deliverables that need validation, add validators:
+
+```typescript src/session-manager.ts
+export const AGENT_VALIDATORS: Record<AgentName, AgentValidator> = {
+  // ... existing validators
+  
+  'newtype-vuln': async (sourceDir: string, logger: ActivityLogger) => {
+    const queueFile = path.join(sourceDir, 'deliverables', 'newtype_exploitation_queue.json');
+    const analysisFile = path.join(sourceDir, 'deliverables', 'newtype_analysis_deliverable.md');
+    
+    return await fs.pathExists(queueFile) && await fs.pathExists(analysisFile);
+  },
+  
+  'newtype-exploit': async (sourceDir: string) => {
+    const evidenceFile = path.join(sourceDir, 'deliverables', 'newtype_exploitation_evidence.md');
+    return await fs.pathExists(evidenceFile);
+  },
+};
+```
+
+## Prompt Variable Substitution
+
+Prompts support automatic variable substitution:
+
+- `{{WEB_URL}}` - Target application URL
+- `{{REPO_PATH}}` - Source code repository path
+- `{{MCP_SERVER}}` - Assigned Playwright instance
+- `{{LOGIN_INSTRUCTIONS}}` - Authentication flow (from config)
+- `{{RULES_AVOID}}` - Testing restrictions (from config)
+- `{{RULES_FOCUS}}` - Testing priorities (from config)
+
+See [Custom Prompts](/development/custom-prompts) for details.
+
+## Include Directives
+
+Use `@include()` to reuse shared prompt sections:
+
+```txt
+@include(shared/_target.txt)
+@include(shared/_rules.txt)
+@include(shared/_vuln-scope.txt)
+@include(shared/_exploit-scope.txt)
+```
+
+Shared partials are in `prompts/shared/`.
+
+## Testing Your Agent
+
+### Quick Testing Mode
+
+Use `PIPELINE_TESTING=true` for fast iteration:
+
+```bash
+./shannon start URL=https://example.com REPO=repo-name PIPELINE_TESTING=true
+```
+
+This uses minimal prompts from `prompts/pipeline-testing/` with 10s retry intervals.
+
+### Validation
+
+Verify your agent:
+
+1. Check deliverable creation in `deliverables/`
+2. Review agent logs in `audit-logs/{sessionId}/agents/`
+3. Inspect prompt snapshot in `audit-logs/{sessionId}/prompts/`
+4. Test resume functionality with `WORKSPACE=test-workspace`
+
+## Best Practices
+
+<Steps>
+<Step title="Follow the two-phase pattern">
+  Create both analysis and exploitation agents for each vulnerability type.
+</Step>
+
+<Step title="Use consistent naming">
+  Follow the convention: `<type>-vuln` and `<type>-exploit`.
+</Step>
+
+<Step title="Reuse shared prompt sections">
+  Use `@include()` directives instead of duplicating boilerplate.
+</Step>
+
+<Step title="Document expected deliverables">
+  Clearly specify output files in the prompt and agent definition.
+</Step>
+
+<Step title="Assign appropriate model tiers">
+  - `small` for summarization/reporting
+  - `medium` for security analysis (default)
+  - `large` for deep code analysis
+</Step>
+
+<Step title="Handle parallel execution">
+  Assign different Playwright instances to agents that run in parallel.
+</Step>
+</Steps>
+
+## Example: Adding CSRF Detection
+
+Here's a complete example for adding CSRF detection:
+
+<CodeGroup>
+```typescript src/session-manager.ts
+'csrf-vuln': {
+  name: 'csrf-vuln',
+  displayName: 'CSRF vuln agent',
+  prerequisites: ['recon'],
+  promptTemplate: 'vuln-csrf',
+  deliverableFilename: 'csrf_analysis_deliverable.md',
+},
+'csrf-exploit': {
+  name: 'csrf-exploit',
+  displayName: 'CSRF exploit agent',
+  prerequisites: ['csrf-vuln'],
+  promptTemplate: 'exploit-csrf',
+  deliverableFilename: 'csrf_exploitation_evidence.md',
+},
+```
+
+```typescript src/types/agents.ts
+export const ALL_AGENTS = [
+  // ...
+  'csrf-vuln',
+  'csrf-exploit',
+  // ...
+] as const;
+```
+
+```txt prompts/vuln-csrf.txt
+<role>
+You are a CSRF Analysis Specialist.
+</role>
+
+<objective>
+Identify state-changing operations without CSRF protection.
+</objective>
+
+<methodology>
+1. Enumerate state-changing endpoints from recon
+2. Check for CSRF tokens in forms and AJAX requests
+3. Verify SameSite cookie attributes
+4. Document vulnerable endpoints in queue
+</methodology>
+```
+</CodeGroup>
+
+For more examples, see the existing vulnerability agents in `prompts/vuln-*.txt` and `prompts/exploit-*.txt`.

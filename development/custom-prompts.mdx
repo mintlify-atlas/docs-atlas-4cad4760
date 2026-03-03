@@ -1,0 +1,432 @@
+---
+title: 'Custom Prompts'
+description: 'Customizing agent prompts and behavior in Shannon'
+---
+
+Shannon's agent behavior is controlled through prompt templates stored in the `prompts/` directory. This guide explains how to customize these prompts.
+
+## Prompt System Overview
+
+Prompts are plain text files with:
+
+- **Variable substitution** - Dynamic content injection
+- **Include directives** - Shared section reuse
+- **MCP server assignment** - Automatic Playwright instance allocation
+
+Prompts are processed by `src/services/prompt-manager.ts` before being sent to the AI model.
+
+## Prompt Structure
+
+A typical prompt template has this structure:
+
+```txt prompts/vuln-example.txt
+<role>
+You are a [Specialist Type].
+</role>
+
+<objective>
+Your mission is to [specific goal].
+Success criterion: [measurable outcome].
+</objective>
+
+<scope>
+@include(shared/_vuln-scope.txt)
+</scope>
+
+<target>
+@include(shared/_target.txt)
+</target>
+
+<rules>
+@include(shared/_rules.txt)
+</rules>
+
+<login_instructions>
+{{LOGIN_INSTRUCTIONS}}
+</login_instructions>
+
+<starting_context>
+- Your single source of truth is `deliverables/[previous_deliverable].md`
+- [Additional context]
+</starting_context>
+
+<methodology>
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+</methodology>
+
+<deliverables>
+1. Save [output 1] to `deliverables/[filename]`
+2. Save [output 2] to `deliverables/[filename]`
+</deliverables>
+```
+
+## Variable Substitution
+
+Variables are automatically replaced when the prompt is loaded. Available variables:
+
+### Core Variables
+
+- `{{WEB_URL}}` - Target application URL
+- `{{REPO_PATH}}` - Source code repository path  
+- `{{MCP_SERVER}}` - Assigned Playwright instance (e.g., `playwright-agent1`)
+
+### Configuration Variables
+
+- `{{LOGIN_INSTRUCTIONS}}` - Authentication flow from config file
+- `{{RULES_AVOID}}` - Testing restrictions from config
+- `{{RULES_FOCUS}}` - Testing priorities from config
+
+### Example Usage
+
+```txt
+<target>
+Target Application: {{WEB_URL}}
+Source Code: {{REPO_PATH}}
+Playwright Instance: {{MCP_SERVER}}
+</target>
+
+<rules>
+Avoid:
+{{RULES_AVOID}}
+
+Focus:
+{{RULES_FOCUS}}
+</rules>
+```
+
+When loaded with config:
+
+```yaml config.yaml
+rules:
+  avoid:
+    - description: "AI should avoid testing logout functionality"
+      type: path
+      url_path: "/logout"
+  focus:
+    - description: "AI should emphasize testing API endpoints"
+      type: path
+      url_path: "/api"
+```
+
+Becomes:
+
+```txt
+<target>
+Target Application: https://example.com
+Source Code: /repos/my-app
+Playwright Instance: playwright-agent1
+</target>
+
+<rules>
+Avoid:
+- AI should avoid testing logout functionality
+
+Focus:
+- AI should emphasize testing API endpoints
+</rules>
+```
+
+## Include Directives
+
+Reuse shared sections with `@include()` directives:
+
+```txt
+@include(shared/_target.txt)
+@include(shared/_rules.txt)
+@include(shared/_vuln-scope.txt)
+@include(shared/_exploit-scope.txt)
+```
+
+Shared partials are stored in `prompts/shared/`.
+
+### Available Shared Partials
+
+- `_target.txt` - Target application and repository information
+- `_rules.txt` - Testing rules (avoid/focus areas)
+- `_vuln-scope.txt` - Vulnerability analysis scope and guidelines
+- `_exploit-scope.txt` - Exploitation scope and guidelines
+- `login-instructions.txt` - Authentication flow template
+
+### Creating Custom Partials
+
+Create new shared sections:
+
+<Steps>
+<Step title="Create the partial file">
+  Add a new file in `prompts/shared/`:
+
+  ```txt prompts/shared/_custom-section.txt
+  <custom_section>
+  This is reusable content that can be included in multiple prompts.
+  </custom_section>
+  ```
+</Step>
+
+<Step title="Include in prompts">
+  Reference it in your prompt templates:
+
+  ```txt prompts/vuln-example.txt
+  @include(shared/_custom-section.txt)
+  ```
+</Step>
+</Steps>
+
+## Login Instructions Template
+
+The `{{LOGIN_INSTRUCTIONS}}` variable is built from `prompts/shared/login-instructions.txt` based on the authentication type in your config.
+
+### Template Sections
+
+The template uses section markers:
+
+```txt prompts/shared/login-instructions.txt
+<!-- BEGIN:COMMON -->
+Common instructions for all login types
+<!-- END:COMMON -->
+
+<!-- BEGIN:FORM -->
+Form-based authentication instructions
+<!-- END:FORM -->
+
+<!-- BEGIN:SSO -->
+SSO authentication instructions
+<!-- END:SSO -->
+
+<!-- BEGIN:VERIFICATION -->
+Success verification instructions
+<!-- END:VERIFICATION -->
+```
+
+Sections are selected based on `authentication.login_type` in config.
+
+### Credential Substitution
+
+Within login instructions, credentials are substituted:
+
+- `$username` → Actual username from config
+- `$password` → Actual password from config
+- `$totp` → TOTP code generation instructions
+- `{{totp_secret}}` → Actual TOTP secret from config
+
+### Example
+
+Config file:
+
+```yaml
+authentication:
+  login_type: form
+  login_url: "https://example.com/login"
+  credentials:
+    username: "test@example.com"
+    password: "mypassword"
+    totp_secret: "LB2E2RX7XFHSTGCK"
+  login_flow:
+    - "Type $username into the email field"
+    - "Type $password into the password field"
+    - "Generate and type $totp into the 2FA field"
+    - "Click the 'Sign In' button"
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+```
+
+Produces login instructions with:
+
+```txt
+<user_provided_configuration>
+- Type test@example.com into the email field
+- Type mypassword into the password field
+- Generate and type generated TOTP code using secret "LB2E2RX7XFHSTGCK" into the 2FA field
+- Click the 'Sign In' button
+</user_provided_configuration>
+```
+
+## MCP Server Assignment
+
+Playwright instances are automatically assigned based on the `MCP_AGENT_MAPPING` in `src/session-manager.ts`:
+
+```typescript src/session-manager.ts
+export const MCP_AGENT_MAPPING: Record<string, PlaywrightAgent> = {
+  'vuln-injection': 'playwright-agent1',
+  'vuln-xss': 'playwright-agent2',
+  'vuln-auth': 'playwright-agent3',
+  'vuln-ssrf': 'playwright-agent4',
+  'vuln-authz': 'playwright-agent5',
+  // ...
+};
+```
+
+The `{{MCP_SERVER}}` variable is automatically set to the correct instance.
+
+<Note>
+Agents that run in parallel must use different Playwright instances to avoid conflicts. Agents in the same vulnerability/exploit pair should use the same instance.
+</Note>
+
+## Customizing Existing Prompts
+
+### Modifying Analysis Depth
+
+Increase or decrease analysis thoroughness:
+
+```txt prompts/vuln-injection.txt
+<methodology>
+1. Enumerate ALL input points from reconnaissance
+2. For EACH input:
+   - Trace data flow from source to sink
+   - Identify sanitization functions
+   - Check for encoding/escaping
+   - Determine exploitability
+3. Document EVERY finding (not just high-severity)
+</methodology>
+```
+
+For lighter analysis:
+
+```txt
+<methodology>
+1. Focus on high-risk input points (user-controlled, database-bound)
+2. Prioritize direct SQL/command sinks
+3. Document only high-confidence findings
+</methodology>
+```
+
+### Adjusting Exploitation Aggressiveness
+
+```txt prompts/exploit-injection.txt
+<methodology>
+1. Load exploitation queue
+2. For EACH hypothesis:
+   - Attempt 3 different payloads
+   - Try bypass techniques if initial attempt fails
+   - Capture full evidence (screenshots, responses)
+3. Only report confirmed exploits
+</methodology>
+```
+
+For conservative testing:
+
+```txt
+<methodology>
+1. Load exploitation queue
+2. For EACH hypothesis:
+   - Use single proof-of-concept payload
+   - Stop immediately if successful
+   - Minimize state changes
+3. Only report confirmed exploits
+</methodology>
+```
+
+## Testing Custom Prompts
+
+### Pipeline Testing Mode
+
+Use `PIPELINE_TESTING=true` to test with minimal prompts:
+
+```bash
+./shannon start URL=https://example.com REPO=repo-name PIPELINE_TESTING=true
+```
+
+This loads prompts from `prompts/pipeline-testing/` instead of `prompts/`. Create simplified versions there for rapid iteration.
+
+### Prompt Snapshots
+
+Shannon saves the final interpolated prompt to `audit-logs/{sessionId}/prompts/` for every agent execution. Review these to verify variable substitution and includes worked correctly.
+
+### Example Workflow
+
+<Steps>
+<Step title="Modify the prompt">
+  Edit `prompts/vuln-injection.txt` with your changes.
+</Step>
+
+<Step title="Run a test">
+  ```bash
+  ./shannon start URL=http://host.docker.internal:3000 REPO=test-app
+  ```
+</Step>
+
+<Step title="Review the snapshot">
+  Check `audit-logs/{sessionId}/prompts/vuln-injection.txt` to see the final prompt sent to the AI.
+</Step>
+
+<Step title="Review agent output">
+  Check `audit-logs/{sessionId}/agents/injection-vuln.log` for agent execution logs.
+</Step>
+
+<Step title="Iterate">
+  Adjust the prompt based on results and repeat.
+</Step>
+</Steps>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Be Specific" icon="bullseye">
+    Provide clear, measurable success criteria. Vague objectives lead to inconsistent results.
+  </Card>
+  
+  <Card title="Use Examples" icon="book">
+    Include examples of good and bad patterns in the prompt to guide the AI.
+  </Card>
+  
+  <Card title="Structure Output" icon="list">
+    Explicitly specify deliverable formats (Markdown, JSON, etc.) and required sections.
+  </Card>
+  
+  <Card title="Leverage Includes" icon="puzzle-piece">
+    Reuse shared sections instead of duplicating content across prompts.
+  </Card>
+</CardGroup>
+
+## Advanced: Conditional Logic
+
+Prompts don't support native conditionals, but you can use variable substitution for dynamic content:
+
+```txt
+<rules>
+{{RULES_AVOID}}
+{{RULES_FOCUS}}
+</rules>
+```
+
+If no rules are provided in config, these variables become empty strings. The prompt manager automatically handles this gracefully.
+
+## Troubleshooting
+
+### Unresolved Placeholders
+
+If you see warnings like:
+
+```
+Found unresolved placeholders in prompt: {{CUSTOM_VAR}}
+```
+
+This means a variable wasn't substituted. Check:
+
+1. Variable name matches exactly (case-sensitive)
+2. Variable is defined in `src/services/prompt-manager.ts`
+3. Config file provides the necessary data
+
+### Include File Not Found
+
+```
+Prompt file not found: prompts/shared/_missing.txt
+```
+
+Ensure:
+
+1. File exists in `prompts/shared/`
+2. Path is relative to `prompts/` directory
+3. No typos in the include path
+
+### Prompt Too Long
+
+If the final prompt exceeds model context limits:
+
+1. Move verbose examples to external files
+2. Use more concise methodology descriptions
+3. Reference documentation URLs instead of embedding content
+
+For more details on the prompt system architecture, see [Architecture Deep Dive](/development/architecture-deep-dive).

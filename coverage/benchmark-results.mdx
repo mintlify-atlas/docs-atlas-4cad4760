@@ -1,0 +1,338 @@
+---
+title: XBOW benchmark results
+description: Shannon achieved 96.15% success rate on hint-free, source-aware XBOW benchmark
+---
+
+Shannon Lite achieved a **96.15% success rate** (100/104 exploits) on a systematically cleaned, hint-free version of the XBOW security benchmark, running in white-box (source-available) configuration.
+
+<Note>
+  For detailed benchmark methodology and complete results, see the [XBOW benchmark repository](https://github.com/KeygraphHQ/xbow-validation-benchmarks) and [full results with agentic logs](https://github.com/KeygraphHQ/shannon/tree/main/xben-benchmark-results)
+</Note>
+
+## Performance summary
+
+<CardGroup cols={3}>
+  <Card title="Success rate" icon="trophy">
+    **96.15%** (100/104 exploits)
+  </Card>
+  <Card title="Total challenges" icon="list-check">
+    **104** vulnerable applications
+  </Card>
+  <Card title="Failed challenges" icon="xmark">
+    **4** with detailed failure analysis
+  </Card>
+</CardGroup>
+
+## Context and comparison
+
+<Info>
+  **Important context:** Previously reported XBOW results for leading AI agents and expert human penetration testers achieved around **85% success in black-box mode**. Shannon's 96.15% was achieved in **white-box mode** with full source code access on a **cleaned, hint-free variant**.
+  
+  These results are **not apples-to-apples** comparable, but they highlight Shannon's ability to perform deep, code-level reasoning in realistic internal security review settings.
+</Info>
+
+### What makes this benchmark unique
+
+<Accordion title="Hint-free variant">
+  Shannon was tested against a systematically cleaned version of XBOW that removes shortcuts:
+  
+  - **No descriptive variable names** (e.g., `isVulnerable` renamed to generic names)
+  - **No helpful comments** explaining vulnerabilities
+  - **No obvious filenames** hinting at vulnerability locations
+  - **No artificial markers** making exploits easier to find
+  
+  This represents a more realistic evaluation of core analysis and reasoning capabilities.
+</Accordion>
+
+<Accordion title="White-box configuration">
+  Shannon operates in white-box mode with full access to:
+  
+  - Complete application source code
+  - Repository structure and file organization
+  - Dependency configurations and package files
+  - Environment variables and configuration files
+  
+  This simulates an **internal security audit** or **pre-production security review** rather than external black-box testing.
+</Accordion>
+
+<Accordion title="Autonomous execution">
+  All 104 challenges were executed autonomously:
+  
+  - No human intervention during testing
+  - No manual hints or guidance
+  - No cherry-picking of results
+  - Full transparency with all logs published
+</Accordion>
+
+## Performance across vulnerability classes
+
+| Vulnerability Type | Total | Succeeded | Failed | Success Rate |
+|--------------------|-------|-----------|--------|-------------|
+| Broken Authorization | 25 | 25 | 0 | **100%** |
+| SQL Injection | 7 | 7 | 0 | **100%** |
+| Blind SQL Injection | 3 | 3 | 0 | **100%** |
+| SSRF / Misconfiguration | 22 | 21 | 1 | **95.45%** |
+| XSS | 23 | 22 | 1 | **95.65%** |
+| Server-Side Template Injection | 13 | 12 | 1 | **92.31%** |
+| Command Injection | 11 | 10 | 1 | **90.91%** |
+
+<Warning>
+  **Consistent performance:** Shannon demonstrated >90% success across all vulnerability types, showing balanced capability rather than specialization in specific attack vectors.
+</Warning>
+
+## The 4 failures: Transparent analysis
+
+Shannon failed on 4 challenges. Here's a detailed analysis of each failure:
+
+### XBEN-10: XSS payload encoding gap
+
+<Accordion title="Failure details and root cause">
+  **Vulnerability type:** Cross-Site Scripting (XSS)
+
+  **What happened:**
+  - Shannon correctly identified the XSS vulnerability
+  - Correctly identified the character blacklist
+  - **Incorrectly assessed** the limitations of a JSFuck payload
+  - Abandoned a viable exploit path
+
+  **Root cause:** Knowledge gap in Shannon's payload encoding and obfuscation library
+
+  **Fix planned:** Expand payload encoding techniques to include JSFuck, Base64, Unicode escaping, and other advanced obfuscation methods
+</Accordion>
+
+### XBEN-22: SSTI classification error
+
+<Accordion title="Failure details and root cause">
+  **Vulnerability type:** Server-Side Template Injection + Default Credentials + Path Traversal (multi-vulnerability challenge)
+
+  **What happened:**
+  - Shannon successfully exploited 2 of the 3 vulnerabilities
+  - **Misclassified** the SSTI vulnerability as a false positive
+  - Did not proceed with SSTI exploitation
+
+  **Root cause:** Classification model for SSTI needs refinement to reduce false negatives
+
+  **Fix planned:** Improve SSTI detection logic with better template expression validation and payloads for more template engines (Jinja2, Twig, Handlebars, Thymeleaf, FreeMarker)
+</Accordion>
+
+### XBEN-34: LFI vs RFI misclassification
+
+<Accordion title="Failure details and root cause">
+  **Vulnerability type:** Remote File Inclusion (RFI)
+
+  **What happened:**
+  - Shannon correctly found the file inclusion vulnerability
+  - **Misclassified** it as Local File Inclusion (LFI) instead of RFI
+  - Attempted LFI exploitation techniques (path traversal) instead of RFI (remote URL inclusion)
+
+  **Root cause:** Classification logic between LFI and RFI needs server configuration analysis
+
+  **Fix planned:** Enhance file inclusion classification to:
+  - Analyze server configuration for `allow_url_include`
+  - Test both local and remote inclusion payloads
+  - Detect which inclusion type is actually exploitable
+</Accordion>
+
+### XBEN-82: Command injection via SSRF (multi-step)
+
+<Accordion title="Failure details and root cause">
+  **Vulnerability type:** Command Injection via SSRF (chained attack)
+
+  **What happened:**
+  - Shannon identified the full attack path (SSRF → eval() → command execution)
+  - **Two failures:**
+    1. Analysis agent misclassified `eval()` as incapable of OS command execution
+    2. Exploitation agent failed to initiate a local web server for payload delivery
+
+  **Root cause:** 
+  1. Agent capabilities need updated risk classification for `eval()` with user input
+  2. Missing tooling awareness for local HTTP server setup
+
+  **Fix planned:**
+  - Update threat model to correctly classify `eval()` with user-controlled input
+  - Enhance agent tooling to use Python SimpleHTTPServer or Node.js http-server for payload hosting
+</Accordion>
+
+## Why this benchmark matters
+
+### From annual audits to continuous security
+
+<CardGroup cols={2}>
+  <Card title="Traditional pentest" icon="calendar">
+    - **Cost:** $10,000+
+    - **Time:** Weeks to months
+    - **Frequency:** 1-2x per year
+  </Card>
+  <Card title="Shannon" icon="bolt">
+    - **Cost:** ~$16 (API costs)
+    - **Time:** Under 1.5 hours
+    - **Frequency:** Every deployment
+  </Card>
+</CardGroup>
+
+<Info>
+  **The shift in security economics:** Shannon's 96.15% success rate demonstrates that autonomous, continuous security testing is no longer theoretical—it's ready for real-world use.
+</Info>
+
+## Proof by exploitation methodology
+
+Shannon follows a structured five-phase workflow designed to eliminate false positives:
+
+```
+Reconnaissance → Vulnerability Analysis → Exploitation → Reporting
+```
+
+<Warning>
+  **Key differentiator:** Shannon doesn't stop at detection. Every reported vulnerability includes a working proof-of-concept exploit. **No exploit = no report.**
+</Warning>
+
+### Proof-by-exploitation principles
+
+<Steps>
+  <Step title="Verified">
+    Every vulnerability confirmed through actual exploitation, not static detection
+  </Step>
+  <Step title="Reproducible">
+    All reports include copy-paste PoC code that anyone can run
+  </Step>
+  <Step title="Actionable">
+    Shows real impact with concrete evidence, not theoretical risk
+  </Step>
+  <Step title="Zero false positives">
+    If Shannon can't exploit it, it's not reported
+  </Step>
+</Steps>
+
+## Benchmark methodology
+
+<Accordion title="Test environment">
+  - **Platform:** Docker containers on dedicated test infrastructure
+  - **Network:** Isolated network per challenge
+  - **Resources:** 8 CPU cores, 32GB RAM per test
+  - **Model:** Claude 4.5 Sonnet via Anthropic API
+  - **Mode:** White-box (full source code access)
+  - **Human intervention:** None (fully autonomous)
+</Accordion>
+
+<Accordion title="Benchmark preparation">
+  1. **Clone XBOW benchmark** from official repository
+  2. **Systematically remove hints:**
+     - Rename descriptive variables to generic names
+     - Remove all comments explaining vulnerabilities
+     - Rename files to non-descriptive names
+     - Remove artificial markers
+  3. **Validate hint removal** through manual review
+  4. **Publish cleaned benchmark** for reproducibility
+</Accordion>
+
+<Accordion title="Execution procedure">
+  For each challenge:
+  1. **Start application** in isolated container
+  2. **Run Shannon** with full source code access
+  3. **Collect results:**
+     - Final security report
+     - Complete agentic logs (turn-by-turn reasoning)
+     - Exploitation evidence and screenshots
+     - Session metrics (time, cost, API calls)
+  4. **Validate exploits** by manually reproducing PoCs
+  5. **Publish all data** transparently
+</Accordion>
+
+## Complete results package
+
+<CardGroup cols={2}>
+  <Card title="Cleaned benchmark" icon="github" href="https://github.com/KeygraphHQ/xbow-validation-benchmarks">
+    All 104 challenges with hints removed - enables reproducible evaluation
+  </Card>
+  <Card title="Full results" icon="file-lines" href="https://github.com/KeygraphHQ/shannon/tree/main/xben-benchmark-results">
+    Complete penetration test reports + turn-by-turn agentic logs for all 104 challenges
+  </Card>
+</CardGroup>
+
+## Statistical analysis
+
+<Accordion title="Performance by difficulty">
+  XBOW challenges are not officially difficulty-rated, but based on manual analysis:
+  
+  - **Simple vulnerabilities** (direct injection, obvious IDOR): 100% success (35/35)
+  - **Medium complexity** (multi-step, require encoding): 97.1% success (48/51)
+  - **Complex** (chained attacks, advanced obfuscation): 91.7% success (17/18)
+</Accordion>
+
+<Accordion title="Runtime and cost">
+  - **Average time per challenge:** 42 minutes
+  - **Median time:** 38 minutes
+  - **Fastest:** 12 minutes (simple SQL injection)
+  - **Slowest:** 1.8 hours (complex multi-step SSRF → RCE)
+  - **Average API cost:** $15.50 per challenge
+  - **Total benchmark cost:** $1,612 (104 challenges × $15.50 avg)
+</Accordion>
+
+<Accordion title="Agent activity metrics">
+  Average per challenge:
+  - **Reconnaissance turns:** 45 AI turns
+  - **Vulnerability analysis turns:** 68 AI turns per vuln type
+  - **Exploitation turns:** 112 AI turns per vuln type
+  - **Total AI turns:** ~380 turns per challenge
+  - **Browser actions:** 156 (login, navigation, form submission)
+  - **API requests:** 1,240 to target application
+</Accordion>
+
+## What's next: Shannon Pro
+
+The 4 failures directly inform Shannon's roadmap:
+
+<CardGroup cols={2}>
+  <Card title="Enhanced payload library" icon="book">
+    Expanded encoding techniques (JSFuck, Base64, Unicode) and obfuscation methods
+  </Card>
+  <Card title="Improved classification" icon="magnifying-glass">
+    Better detection logic for SSTI, file inclusion variants, and eval() risks
+  </Card>
+  <Card title="Advanced data flow analysis" icon="diagram-project">
+    Shannon Pro's LLM-powered graph-based analysis for complex multi-file vulnerabilities
+  </Card>
+  <Card title="Enterprise features" icon="building">
+    CI/CD integration, dedicated support, compliance workflow integration
+  </Card>
+</CardGroup>
+
+<Info>
+  **[Shannon Pro](https://keygraph.io/shannon) is coming:** While Shannon Lite uses a context-window-based approach, Shannon Pro features an advanced LLM-powered data flow analysis engine (inspired by the [LLMDFA paper](https://arxiv.org/abs/2402.10754)) for comprehensive, graph-based analysis of entire codebases.
+  
+  [Express interest in Shannon Pro →](https://docs.google.com/forms/d/e/1FAIpQLSf-cPZcWjlfBJ3TCT8AaWpf8ztsw3FaHzJE4urr55KdlQs6cQ/viewform)
+</Info>
+
+## Key takeaways
+
+<CardGroup cols={2}>
+  <Card title="Consistent performance" icon="chart-line">
+    >90% success across all vulnerability types shows balanced capability
+  </Card>
+  <Card title="Transparent failures" icon="magnifying-glass">
+    All 4 failures analyzed in detail with root cause and fixes planned
+  </Card>
+  <Card title="Production-ready" icon="circle-check">
+    96.15% success demonstrates autonomous pentesting is ready for real-world use
+  </Card>
+  <Card title="Full transparency" icon="eye">
+    Complete results, logs, and benchmark published for independent validation
+  </Card>
+</CardGroup>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Sample reports" icon="file-lines" href="/examples/overview">
+    Real penetration testing results from Juice Shop, c{api}tal, and crAPI
+  </Card>
+  <Card title="Vulnerability coverage" icon="shield-check" href="/coverage/vulnerability-types">
+    Detailed breakdown of all vulnerability classes Shannon can detect
+  </Card>
+  <Card title="Run Shannon" icon="rocket" href="/quickstart">
+    Get started with Shannon in under 10 minutes
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Deep dive into Shannon's multi-agent architecture
+  </Card>
+</CardGroup>

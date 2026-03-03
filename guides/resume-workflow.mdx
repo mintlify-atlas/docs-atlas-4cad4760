@@ -1,0 +1,474 @@
+---
+title: Resume Workflow
+description: Resume interrupted Shannon runs without re-running completed agents
+---
+
+Shannon's workspace system allows you to resume interrupted or failed runs, picking up exactly where you left off without re-running completed agents.
+
+## How Workspaces Work
+
+Every Shannon run creates a **workspace** — a directory in `audit-logs/` that contains all execution state, deliverables, and progress tracking.
+
+<Steps>
+  <Step title="Run Creates Workspace">
+    When you start Shannon, a workspace is created:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+    
+    Output:
+    ```
+    Workspace: example-com_shannon-1771007534808
+    Logs: ./shannon logs ID=example-com_shannon-1771007534808
+    ```
+  </Step>
+  
+  <Step title="Progress is Checkpointed">
+    Each agent's completion is saved as a git commit in the workspace, creating restore points.
+  </Step>
+  
+  <Step title="Resume from Checkpoint">
+    If Shannon stops (crash, timeout, manual stop), resume using the same workspace name:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=example-com_shannon-1771007534808
+    ```
+    
+    Shannon detects completed agents and skips them, continuing from where it stopped.
+  </Step>
+</Steps>
+
+## Creating Named Workspaces
+
+Use named workspaces for easier reference and resumability:
+
+<CodeGroup>
+```bash Named Workspace
+# Start with a custom name
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+
+# Resume later with the same name
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+```
+
+```bash Auto-Named Workspace
+# Shannon generates name from URL + timestamp
+./shannon start URL=https://example.com REPO=repo-name
+# Workspace: example-com_shannon-1771007534808
+
+# Resume with auto-generated name
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=example-com_shannon-1771007534808
+```
+</CodeGroup>
+
+<Note>
+**Workspace Names**
+
+- **Named:** Easy to remember (e.g., `q1-audit`, `prod-scan-2026`)
+- **Auto-generated:** Unique but verbose (e.g., `example-com_shannon-1771007534808`)
+
+Choose named workspaces for long-running audits or when you plan to resume frequently.
+</Note>
+
+## Resume Behavior
+
+When resuming a workspace, Shannon:
+
+1. **Validates URL match** - Ensures the URL matches the original run (prevents cross-target contamination)
+2. **Detects completed agents** - Checks which agents have saved deliverables
+3. **Restores git checkpoint** - Resets workspace to last successful agent commit
+4. **Skips completed agents** - Jumps directly to the next incomplete agent
+5. **Continues execution** - Runs remaining agents from the checkpoint
+
+### Example Resume Flow
+
+<Steps>
+  <Step title="Initial Run Interrupted">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+    ```
+    
+    Progress:
+    - ✅ Pre-Recon (completed)
+    - ✅ Recon (completed)
+    - ✅ Vuln-Injection (completed)
+    - ❌ Vuln-XSS (interrupted)
+    - ⏸️ Remaining agents (not started)
+  </Step>
+  
+  <Step title="Resume Command">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+    ```
+    
+    Output:
+    ```
+    Resuming workspace: my-audit
+    Completed agents: pre-recon, recon, vuln-injection
+    Starting from: vuln-xss
+    ```
+  </Step>
+  
+  <Step title="Execution Continues">
+    Shannon skips completed agents and continues:
+    
+    - ⏭️ Pre-Recon (skipped)
+    - ⏭️ Recon (skipped)
+    - ⏭️ Vuln-Injection (skipped)
+    - ▶️ Vuln-XSS (running)
+    - ⏸️ Remaining agents (pending)
+  </Step>
+</Steps>
+
+## Listing Workspaces
+
+View all workspaces with their status and resumability:
+
+```bash
+./shannon workspaces
+```
+
+Output:
+```
+=== Shannon Workspaces ===
+
+  WORKSPACE                      URL                            STATUS         DURATION   COST      
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  q1-audit                       https://example.com            in-progress    45m        $32.50    (resumable)
+  example-com_shannon-17710...   https://example.com            failed         12m        $8.20     (resumable)
+  prod-scan-2026                 https://prod.example.com       completed      1h 15m     $48.90    
+
+3 workspaces found (2 resumable)
+
+Resume with: ./shannon start URL=<url> REPO=<repo> WORKSPACE=<name>
+```
+
+### Workspace Status
+
+<ResponseField name="in-progress" type="Resumable">
+  Run is active or was interrupted. Can be resumed.
+</ResponseField>
+
+<ResponseField name="failed" type="Resumable">
+  Run encountered an error. Can be resumed to retry failed agent.
+</ResponseField>
+
+<ResponseField name="completed">
+  Run finished successfully. Cannot be resumed (all agents completed).
+</ResponseField>
+
+## Workspace Structure
+
+Each workspace directory contains:
+
+```
+audit-logs/example-com_shannon-1771007534808/
+├── session.json          # Workflow metadata, status, metrics
+├── workflow.log          # Human-readable execution log
+├── agents/               # Per-agent execution logs
+│   ├── pre-recon.log
+│   ├── recon.log
+│   ├── vuln-injection.log
+│   └── ...
+├── prompts/              # Prompt snapshots for reproducibility
+│   ├── pre-recon.txt
+│   ├── recon.txt
+│   └── ...
+└── deliverables/
+    └── comprehensive_security_assessment_report.md
+```
+
+### Key Files
+
+<ResponseField name="session.json">
+  Tracks workflow state, completed agents, cost, and duration. Used by resume logic.
+</ResponseField>
+
+<ResponseField name="workflow.log">
+  Human-readable log of all workflow events. Tail with `./shannon logs ID=<workspace>`.
+</ResponseField>
+
+<ResponseField name="agents/">
+  Individual agent logs with tool use, errors, and completion status.
+</ResponseField>
+
+<ResponseField name="deliverables/">
+  Agent outputs copied from repo to workspace for self-contained audit trail.
+</ResponseField>
+
+## Resume Validation
+
+Shannon enforces strict validation when resuming:
+
+### URL Match Required
+
+<Warning>
+**URL Mismatch Rejected**
+
+The `URL` parameter must match the original workspace URL. This prevents accidentally resuming a workspace from a different target.
+
+```bash
+# Original run
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit
+
+# Resume with different URL (rejected)
+./shannon start URL=https://other.com REPO=repo-name WORKSPACE=my-audit
+# ERROR: URL mismatch. Workspace 'my-audit' was created for https://example.com
+```
+</Warning>
+
+### Deliverable Existence
+
+Shannon verifies that completed agents have valid deliverables before marking them as skippable. If a deliverable is missing or corrupted, the agent re-runs.
+
+### Git Checkpoint Restore
+
+Before resuming, Shannon:
+
+1. Loads the last successful agent commit from workspace git history
+2. Resets the workspace to that commit
+3. Cleans up any incomplete deliverables from interrupted agents
+4. Continues from a clean state
+
+This ensures no partial or corrupted state from the interruption carries forward.
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Crash Recovery" icon="rotate-right">
+    System crash or container restart during long-running pentest
+    
+    **Action:** Resume with same workspace name
+  </Card>
+  
+  <Card title="Rate Limit Recovery" icon="clock">
+    Hit API rate limits mid-run
+    
+    **Action:** Wait for limit reset, then resume
+  </Card>
+  
+  <Card title="Manual Stop" icon="hand">
+    Stop run intentionally to adjust configuration
+    
+    **Action:** Update config, resume with same workspace
+  </Card>
+  
+  <Card title="Iterative Testing" icon="flask">
+    Test agents incrementally during development
+    
+    **Action:** Run one phase, stop, review, resume
+  </Card>
+</CardGroup>
+
+## Examples
+
+### Resume After Crash
+
+```bash
+# Initial run crashes mid-execution
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+# ... crashes during vuln-xss agent
+
+# List workspaces to confirm
+./shannon workspaces
+# Shows: q1-audit | in-progress | 32m | $18.50 (resumable)
+
+# Resume from checkpoint
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+# Skips: pre-recon, recon, vuln-injection
+# Continues from: vuln-xss
+```
+
+### Resume After Rate Limit
+
+```bash
+# Hit rate limit during analysis phase
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=rate-limit-test
+# ERROR: Rate limit exceeded (429)
+
+# Wait for rate limit window to reset (5 hours for subscription plans)
+# Check status
+./shannon workspaces
+
+# Resume after reset
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=rate-limit-test
+```
+
+### Resume Auto-Named Workspace
+
+```bash
+# Start without explicit workspace name
+./shannon start URL=https://example.com REPO=repo-name
+# Workspace: example-com_shannon-1771007534808
+
+# Stop manually
+./shannon stop
+
+# List workspaces to find auto-generated name
+./shannon workspaces
+
+# Resume with auto-generated name
+./shannon start URL=https://example.com REPO=repo-name WORKSPACE=example-com_shannon-1771007534808
+```
+
+## Configuration Changes on Resume
+
+<Tabs>
+  <Tab title="Safe Changes">
+    These configuration changes are safe when resuming:
+    
+    - **Pipeline settings** - `retry_preset`, `max_concurrent_pipelines`
+    - **Environment variables** - API keys, model overrides
+    - **Output directory** - Change `OUTPUT=` path
+    
+    ```bash
+    # Resume with adjusted pipeline settings
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit CONFIG=./configs/new-settings.yaml
+    ```
+  </Tab>
+  
+  <Tab title="Unsafe Changes">
+    These changes require a **new workspace**:
+    
+    - **Authentication** - Login credentials, TOTP secrets
+    - **Rules** - Avoid/focus patterns
+    - **URL** - Target URL (enforced by validation)
+    
+    <Warning>
+    Changing authentication or rules mid-run may cause inconsistent results. Start a new workspace instead:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=my-audit-v2 CONFIG=./configs/new-auth.yaml
+    ```
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Monitoring Resume Progress
+
+Track resumed runs the same way as new runs:
+
+<Tabs>
+  <Tab title="Real-Time Logs">
+    ```bash
+    # Tail workflow log
+    ./shannon logs ID=my-audit
+    
+    # Output shows skip markers
+    [2026-03-03 10:15:23] Resuming workspace: my-audit
+    [2026-03-03 10:15:23] Skipping completed agent: pre-recon
+    [2026-03-03 10:15:23] Skipping completed agent: recon
+    [2026-03-03 10:15:23] Starting agent: vuln-xss
+    ```
+  </Tab>
+  
+  <Tab title="Temporal Web UI">
+    Open [http://localhost:8233](http://localhost:8233) and navigate to the workflow:
+    
+    - View execution history
+    - See which activities completed
+    - Check for errors or timeouts
+    - Query current agent status
+  </Tab>
+  
+  <Tab title="Query Progress">
+    ```bash
+    # Query workflow progress (requires workflow ID)
+    ./shannon query ID=my-audit_shannon-1771007534808
+    
+    # Shows completed/pending agents
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="URL mismatch error">
+    **Error:**
+    ```
+    ERROR: URL mismatch. Workspace 'my-audit' was created for https://example.com
+    ```
+    
+    **Cause:** Trying to resume with a different URL than the original run.
+    
+    **Solution:** Use the original URL or create a new workspace for the new URL.
+  </Accordion>
+  
+  <Accordion title="Workspace not found">
+    **Error:**
+    ```
+    ERROR: Workspace 'my-audit' not found in ./audit-logs/
+    ```
+    
+    **Cause:** Workspace directory doesn't exist or was deleted.
+    
+    **Solution:** Check workspace name with `./shannon workspaces` or start a new run.
+  </Accordion>
+  
+  <Accordion title="No agents to resume">
+    **Error:**
+    ```
+    ERROR: Workspace 'my-audit' has no incomplete agents
+    ```
+    
+    **Cause:** All agents completed successfully (status: `completed`).
+    
+    **Solution:** Workspace cannot be resumed. Start a new run if needed.
+  </Accordion>
+  
+  <Accordion title="Resume starts from beginning">
+    **Issue:** Resume doesn't skip completed agents.
+    
+    **Cause:** Deliverables missing or corrupted in workspace.
+    
+    **Solution:** Check `audit-logs/<workspace>/deliverables/` for expected files. If missing, agents re-run automatically.
+  </Accordion>
+  
+  <Accordion title="Git checkpoint restore failed">
+    **Error:**
+    ```
+    ERROR: Failed to restore git checkpoint for workspace 'my-audit'
+    ```
+    
+    **Cause:** Workspace git history is corrupted or missing.
+    
+    **Solution:** Start a new workspace. Resume relies on git commits for checkpointing.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Named Workspaces">
+    For long-running audits or when resumability is important:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-production-audit
+    ```
+  </Step>
+  
+  <Step title="Monitor Progress">
+    Keep `./shannon logs` running in a separate terminal to catch failures early.
+  </Step>
+  
+  <Step title="Preserve Workspaces">
+    Avoid `./shannon stop CLEAN=true` unless you want to delete all workspaces. Use `./shannon stop` to preserve data.
+  </Step>
+  
+  <Step title="Document Resume Points">
+    Note which agent was running when interrupted to understand resume behavior.
+  </Step>
+</Steps>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Monitoring" icon="chart-line" href="/guides/monitoring">
+    Logs, Temporal UI, and workflow queries
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Adjust pipeline settings for rate limits
+  </Card>
+</CardGroup>

@@ -1,0 +1,464 @@
+---
+title: Authentication
+description: Configure login flows, credentials, and two-factor authentication
+---
+
+Shannon supports multiple authentication methods to test applications with various login mechanisms. Configure authentication in your YAML config file to enable authenticated testing.
+
+## Authentication Methods
+
+Shannon supports four authentication types:
+
+<CardGroup cols={2}>
+  <Card title="Form Login" icon="right-to-bracket">
+    Standard HTML login forms with username/password
+  </Card>
+  <Card title="SSO / OAuth" icon="key">
+    Single sign-on with Google, GitHub, etc.
+  </Card>
+  <Card title="API Authentication" icon="code">
+    Token-based authentication via API endpoints
+  </Card>
+  <Card title="Basic Auth" icon="shield">
+    HTTP Basic Authentication
+  </Card>
+</CardGroup>
+
+## Form Login
+
+The most common authentication type for web applications.
+
+<CodeGroup>
+```yaml Simple Form
+authentication:
+  login_type: form
+  login_url: "https://example.com/login"
+  credentials:
+    username: "test@example.com"
+    password: "testpassword"
+  
+  login_flow:
+    - "Type $username into the email field"
+    - "Type $password into the password field"
+    - "Click the 'Sign In' button"
+  
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+```
+
+```yaml With 2FA
+authentication:
+  login_type: form
+  login_url: "https://example.com/login"
+  credentials:
+    username: "test@example.com"
+    password: "testpassword"
+    totp_secret: "JBSWY3DPEHPK3PXP"  # Base32 TOTP secret
+  
+  login_flow:
+    - "Type $username into the email field"
+    - "Type $password into the password field"
+    - "Click the 'Sign In' button"
+    - "Wait for the 2FA page to load"
+    - "Enter $totp in the verification code field"
+    - "Click 'Verify'"
+  
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+```
+</CodeGroup>
+
+### Login Flow Instructions
+
+Provide natural language steps for the AI to follow. Use these variables:
+
+- `$username` - Replaced with `credentials.username`
+- `$password` - Replaced with `credentials.password`
+- `$totp` - Replaced with current TOTP code (if `totp_secret` provided)
+
+**Best Practices:**
+
+1. Be specific about field names (e.g., "email field" not "first field")
+2. Include wait steps if pages load between actions
+3. Describe buttons by their visible text (e.g., "Click 'Sign In' button")
+4. Keep steps concise (max 500 characters per step)
+5. Use 1-20 steps total
+
+### Success Conditions
+
+Define how Shannon knows authentication succeeded:
+
+<Tabs>
+  <Tab title="URL Contains">
+    Check if URL contains a substring (most common):
+    
+    ```yaml
+    success_condition:
+      type: url_contains
+      value: "/dashboard"
+    ```
+  </Tab>
+  
+  <Tab title="URL Equals">
+    Check for exact URL match:
+    
+    ```yaml
+    success_condition:
+      type: url_equals_exactly
+      value: "https://example.com/app/home"
+    ```
+  </Tab>
+  
+  <Tab title="Element Present">
+    Check for DOM element (use CSS selector):
+    
+    ```yaml
+    success_condition:
+      type: element_present
+      value: "[data-testid='user-menu']"
+    ```
+  </Tab>
+  
+  <Tab title="Text Contains">
+    Check for text on page:
+    
+    ```yaml
+    success_condition:
+      type: text_contains
+      value: "Welcome back"
+    ```
+  </Tab>
+</Tabs>
+
+## SSO / OAuth Login
+
+For applications using single sign-on providers like Google, GitHub, or custom OAuth.
+
+```yaml
+authentication:
+  login_type: sso
+  login_url: "https://example.com/login"
+  credentials:
+    username: "test@example.com"
+    password: "testpassword"
+  
+  login_flow:
+    - "Click the 'Sign in with Google' button"
+    - "Wait for the Google login page to load"
+    - "Type $username into the email field"
+    - "Click 'Next'"
+    - "Wait for password page"
+    - "Type $password into the password field"
+    - "Click 'Next'"
+    - "Wait for redirect back to the application"
+  
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+```
+
+<Note>
+**SSO with 2FA**
+
+If your SSO provider uses 2FA, add `totp_secret` to credentials and include the TOTP step in your login flow:
+
+```yaml
+login_flow:
+  - "Click 'Sign in with Google'"
+  - "Type $username into the email field"
+  - "Click 'Next'"
+  - "Type $password into the password field"
+  - "Click 'Next'"
+  - "Enter $totp in the verification code field"  # 2FA step
+  - "Click 'Verify'"
+```
+</Note>
+
+## API Authentication
+
+For applications using token-based authentication via API endpoints.
+
+```yaml
+authentication:
+  login_type: api
+  login_url: "https://api.example.com/auth/login"
+  credentials:
+    username: "test@example.com"
+    password: "testpassword"
+  
+  login_flow:
+    - "Send POST request to $login_url with JSON body: {\"email\": \"$username\", \"password\": \"$password\"}"
+    - "Extract the 'token' field from the response"
+    - "Store the token for subsequent requests"
+  
+  success_condition:
+    type: text_contains
+    value: '"token"'
+```
+
+<Warning>
+**API Authentication Support**
+
+API authentication is supported but relies on the AI agent's ability to construct and send HTTP requests. For complex API flows, form-based or SSO authentication may be more reliable.
+</Warning>
+
+## Basic Authentication
+
+For applications using HTTP Basic Auth.
+
+```yaml
+authentication:
+  login_type: basic
+  login_url: "https://example.com/"
+  credentials:
+    username: "admin"
+    password: "secretpassword"
+  
+  login_flow:
+    - "Use HTTP Basic Authentication with username and password"
+  
+  success_condition:
+    type: url_contains
+    value: "/"
+```
+
+## TOTP 2FA Setup
+
+Shannon automatically generates time-based one-time passwords (TOTP) for two-factor authentication when you provide a `totp_secret`.
+
+### Getting Your TOTP Secret
+
+The TOTP secret is the **Base32-encoded shared secret** used to generate 6-digit codes. Here's how to find it:
+
+<Steps>
+  <Step title="Enable 2FA on Test Account">
+    Set up two-factor authentication on your test account as you normally would.
+  </Step>
+  
+  <Step title="Reveal the Secret Key">
+    Most apps show a QR code and a "manual entry" or "secret key" option. Click to reveal the secret.
+    
+    **Example secret:** `JBSWY3DPEHPK3PXP`
+  </Step>
+  
+  <Step title="Add to Config">
+    Copy the secret and add it to your configuration:
+    
+    ```yaml
+    credentials:
+      username: "test@example.com"
+      password: "testpassword"
+      totp_secret: "JBSWY3DPEHPK3PXP"
+    ```
+  </Step>
+  
+  <Step title="Update Login Flow">
+    Add TOTP step to your login flow:
+    
+    ```yaml
+    login_flow:
+      - "Type $username into the email field"
+      - "Type $password into the password field"
+      - "Click 'Sign In'"
+      - "Enter $totp in the verification code field"
+      - "Click 'Verify'"
+    ```
+  </Step>
+</Steps>
+
+### TOTP Format
+
+<ParamField path="totp_secret" type="string">
+  Base32-encoded TOTP secret (case insensitive)
+  
+  **Valid characters:** A-Z, 2-7, and `=` for padding
+  
+  **Example:** `JBSWY3DPEHPK3PXP`
+</ParamField>
+
+<Accordion title="Common TOTP issues">
+**Invalid secret format**
+```
+ERROR: totp_secret must match pattern ^[A-Za-z2-7]+=*$
+```
+Ensure your secret only contains Base32 characters (A-Z, 2-7, =).
+
+**Wrong code generated**
+- Check that the secret is copied correctly (no spaces)
+- Verify system time is synchronized (TOTP is time-based)
+- Some apps use 8-digit codes instead of 6-digit (not currently supported)
+</Accordion>
+
+## Credentials Management
+
+<Warning>
+**Security Best Practices**
+
+1. **Use test accounts only** - Never use production credentials
+2. **Limit permissions** - Test accounts should have minimal privileges
+3. **Rotate regularly** - Change test account passwords periodically
+4. **Secure config files** - Add `configs/*.yaml` to `.gitignore`
+5. **Environment variables** - For CI/CD, inject credentials at runtime
+</Warning>
+
+### Environment Variable Substitution
+
+Avoid hardcoding credentials by using environment variables:
+
+```yaml
+authentication:
+  credentials:
+    username: "${TEST_USERNAME}"
+    password: "${TEST_PASSWORD}"
+    totp_secret: "${TEST_TOTP_SECRET}"
+```
+
+Set in your `.env` file:
+
+```bash
+TEST_USERNAME=test@example.com
+TEST_PASSWORD=testpassword
+TEST_TOTP_SECRET=JBSWY3DPEHPK3PXP
+```
+
+## Provider Credentials
+
+For AI provider authentication (Anthropic, AWS Bedrock, Google Vertex AI), configure in `.env`:
+
+<Tabs>
+  <Tab title="Anthropic API">
+    ```bash .env
+    ANTHROPIC_API_KEY=your-api-key-here
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+    ```
+    
+    Get your API key from [Anthropic Console](https://console.anthropic.com).
+  </Tab>
+  
+  <Tab title="Claude Code OAuth">
+    ```bash .env
+    CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+    ```
+  </Tab>
+  
+  <Tab title="AWS Bedrock">
+    ```bash .env
+    CLAUDE_CODE_USE_BEDROCK=1
+    AWS_REGION=us-east-1
+    AWS_BEARER_TOKEN_BEDROCK=your-bearer-token
+    
+    ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+    ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+    ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+    ```
+    
+    See [Cloud Providers Guide](/guides/cloud-providers) for setup.
+  </Tab>
+  
+  <Tab title="Google Vertex AI">
+    ```bash .env
+    CLAUDE_CODE_USE_VERTEX=1
+    CLOUD_ML_REGION=us-east5
+    ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project-id
+    GOOGLE_APPLICATION_CREDENTIALS=./credentials/gcp-sa-key.json
+    
+    ANTHROPIC_SMALL_MODEL=claude-haiku-4-5@20251001
+    ANTHROPIC_MEDIUM_MODEL=claude-sonnet-4-6
+    ANTHROPIC_LARGE_MODEL=claude-opus-4-6
+    ```
+    
+    See [Cloud Providers Guide](/guides/cloud-providers) for setup.
+  </Tab>
+</Tabs>
+
+## Testing Authentication
+
+Verify your authentication configuration before running a full pentest:
+
+<Steps>
+  <Step title="Create Test Config">
+    ```bash
+    cp configs/example-config.yaml configs/test-auth.yaml
+    # Edit with your credentials and login flow
+    ```
+  </Step>
+  
+  <Step title="Run Pre-Recon Only">
+    Shannon's reconnaissance phase includes authentication testing:
+    
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name CONFIG=./configs/test-auth.yaml
+    ```
+  </Step>
+  
+  <Step title="Check Logs">
+    Monitor logs for authentication success/failure:
+    
+    ```bash
+    ./shannon logs ID=example-com_shannon-1234567890
+    ```
+    
+    Look for messages like:
+    - ✅ "Authentication successful"
+    - ❌ "Authentication failed: element not found"
+    - ❌ "Authentication timed out"
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Authentication timeout">
+    **Cause:** Login flow steps took too long or page didn't load.
+    
+    **Solutions:**
+    - Add explicit wait steps between actions
+    - Increase timeouts in login flow instructions
+    - Simplify login flow (remove unnecessary steps)
+    - Check that URLs are correct
+  </Accordion>
+  
+  <Accordion title="Element not found">
+    **Cause:** Field or button selectors in login flow don't match actual page elements.
+    
+    **Solutions:**
+    - Use exact button text from the page
+    - Be specific about field labels ("email field" not "first field")
+    - Verify login URL loads the correct page
+    - Check for dynamic content that loads after page render
+  </Accordion>
+  
+  <Accordion title="Success condition never met">
+    **Cause:** Success condition doesn't match post-login state.
+    
+    **Solutions:**
+    - Verify URL/element/text after manual login
+    - Try different condition types (url_contains vs element_present)
+    - Check for redirects that change the final URL
+    - Ensure success condition is unique to logged-in state
+  </Accordion>
+  
+  <Accordion title="TOTP codes rejected">
+    **Cause:** TOTP secret is incorrect or time synchronization issue.
+    
+    **Solutions:**
+    - Verify secret is copied correctly (no spaces/newlines)
+    - Check system time is accurate (TOTP requires sync)
+    - Regenerate TOTP secret from app settings
+    - Test secret with an authenticator app first
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Complete YAML configuration reference
+  </Card>
+  <Card title="Cloud Providers" icon="cloud" href="/guides/cloud-providers">
+    AWS Bedrock and Google Vertex AI setup
+  </Card>
+</CardGroup>

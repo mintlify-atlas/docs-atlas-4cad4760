@@ -1,0 +1,275 @@
+---
+title: c{api}tal API report
+description: Security assessment of Checkmarx c{api}tal with nearly 15 critical vulnerabilities
+---
+
+Shannon identified **nearly 15 critical and high-severity vulnerabilities** leading to full application compromise in [c{api}tal](https://github.com/Checkmarx/capital), an intentionally vulnerable API from Checkmarx designed to test the OWASP API Security Top 10.
+
+<Note>
+  The full report is available in the Shannon repository at `sample-reports/shannon-report-capital-api.md`
+</Note>
+
+## Executive summary
+
+- **Target:** c{api}tal API (Checkmarx)
+- **Assessment scope:** OWASP API Security Top 10
+- **Total vulnerabilities:** Nearly 15 critical/high findings
+- **Overall impact:** Complete application and infrastructure compromise
+
+## Key accomplishments
+
+<CardGroup cols={2}>
+  <Card title="Root-level command injection" icon="terminal">
+    Bypassed denylist via command chaining in hidden debug endpoint
+  </Card>
+  <Card title="Complete auth bypass" icon="unlock">
+    Discovered and exploited legacy v1 API endpoint
+  </Card>
+  <Card title="Privilege escalation" icon="user-shield">
+    Regular user to full admin via mass assignment
+  </Card>
+  <Card title="Zero false positives" icon="circle-check">
+    Correctly confirmed robust XSS defenses with no false alerts
+  </Card>
+</CardGroup>
+
+## Critical findings
+
+### Command injection (Critical)
+
+<Accordion title="Root-level OS command injection">
+  **Location:** `POST /api/debug/exec` (hidden endpoint)  
+  **Severity:** Critical  
+  **Impact:** Complete server compromise with root access
+
+  **Vulnerability:** Blacklist bypass via command chaining
+
+  **Exploit:**
+  ```bash
+  curl -X POST http://capital-api.local/api/debug/exec \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"command":"ls;cat /etc/passwd"}'
+  ```
+
+  **Proof of impact:**
+  - Executed arbitrary OS commands with root privileges
+  - Read `/etc/passwd`, `/etc/shadow`
+  - Established reverse shell
+  - Exfiltrated application secrets and database credentials
+
+  **Technical details:**  
+  The debug endpoint uses a blacklist approach (`rm`, `dd`, `mkfs`) which is trivially bypassed using command separators (`;`, `&&`, `|`).
+</Accordion>
+
+<Accordion title="Command injection via user input">
+  **Location:** Export functionality  
+  **Severity:** Critical  
+  **Impact:** Remote code execution
+
+  Unsanitized file path parameter in export endpoint enables command injection via path traversal and shell metacharacters.
+</Accordion>
+
+### Authentication bypass (Critical)
+
+<Accordion title="Legacy API v1 authentication bypass">
+  **Location:** `/api/v1/login` (unpatched legacy endpoint)  
+  **Severity:** Critical  
+  **Impact:** Complete authentication bypass for any account
+
+  **Exploit:**
+  ```bash
+  # V2 endpoint (secure)
+  curl -X POST http://capital-api.local/api/v2/login \
+    -d '{"username":"admin","password":"wrong"}'
+  # Result: 401 Unauthorized
+
+  # V1 endpoint (vulnerable)
+  curl -X POST http://capital-api.local/api/v1/login \
+    -d '{"username":"admin"}'
+  # Result: Valid JWT token without password verification
+  ```
+
+  **Proof of impact:**  
+  Successfully obtained admin JWT tokens without providing passwords. The v1 endpoint lacks password verification entirely.
+
+  **Recommendation:**  
+  Disable or remove all legacy API versions. Implement API versioning sunset policies.
+</Accordion>
+
+### Authorization vulnerabilities (Critical)
+
+<Accordion title="Mass assignment privilege escalation">
+  **Location:** `PUT /api/users/{id}` (profile update)  
+  **Severity:** Critical  
+  **Impact:** Instant admin privilege escalation
+
+  **Exploit:**
+  ```bash
+  # Regular user updates their profile with admin role
+  curl -X PUT http://capital-api.local/api/users/42 \
+    -H "Authorization: Bearer $USER_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "username":"regularuser",
+      "email":"user@example.com",
+      "role":"admin",
+      "permissions":["*"]
+    }'
+  ```
+
+  **Proof of impact:**  
+  Regular user account successfully elevated to admin role with full system permissions.
+
+  **Code analysis:**  
+  The profile update endpoint lacks input filtering, allowing clients to set privileged fields like `role` and `permissions`.
+</Accordion>
+
+<Accordion title="IDOR - Access any user data">
+  **Location:** `GET /api/users/{id}`  
+  **Severity:** High  
+  **Impact:** Horizontal privilege escalation
+
+  No authorization check on user ID parameter enables accessing any user's profile including:
+  - Personal information (email, phone, address)
+  - Payment methods and transaction history
+  - API keys and access tokens
+  - Account settings and preferences
+</Accordion>
+
+<Accordion title="BOLA - Modify any resource">
+  **Location:** `PUT/DELETE /api/transactions/{id}`  
+  **Severity:** High  
+  **Impact:** Financial fraud, data manipulation
+
+  Transaction endpoints lack ownership validation, allowing users to:
+  - View other users' transactions
+  - Modify transaction amounts
+  - Delete audit logs
+</Accordion>
+
+### Injection vulnerabilities (Critical)
+
+<Accordion title="SQL injection in search">
+  **Location:** `GET /api/search?q={query}`  
+  **Severity:** Critical  
+  **Impact:** Database compromise
+
+  **Exploit:**
+  ```bash
+  curl "http://capital-api.local/api/search?q=test'%20UNION%20SELECT%20username,password,email%20FROM%20users--"
+  ```
+
+  Successfully extracted:
+  - All user credentials (usernames, password hashes, emails)
+  - Admin API keys
+  - Database schema
+</Accordion>
+
+<Accordion title="NoSQL injection">
+  **Location:** MongoDB query endpoints  
+  **Severity:** High  
+  **Impact:** Authentication bypass, data exfiltration
+
+  Unsanitized MongoDB queries enable operator injection:
+  ```json
+  {"username": {"$ne": null}, "password": {"$ne": null}}
+  ```
+</Accordion>
+
+### Business logic vulnerabilities (High)
+
+<Accordion title="Rate limit bypass">
+  **Location:** All API endpoints  
+  **Severity:** Medium  
+  **Impact:** Brute force attacks, DoS
+
+  Missing rate limiting on:
+  - Login endpoint (credential stuffing)
+  - Password reset (account takeover)
+  - API endpoints (resource exhaustion)
+</Accordion>
+
+<Accordion title="Excessive data exposure">
+  **Location:** User and transaction APIs  
+  **Severity:** Medium  
+  **Impact:** Information disclosure
+
+  API responses include sensitive internal fields:
+  - Password hashes in user objects
+  - Internal database IDs
+  - System configuration details
+  - Debug information in error messages
+</Accordion>
+
+## XSS testing results
+
+<Info>
+  **High accuracy demonstrated:** Shannon correctly identified that c{api}tal implements robust XSS defenses:
+  
+  - Content Security Policy (CSP) with strict directives
+  - Automatic output encoding in all templates
+  - Input sanitization on client-side rendering
+  
+  Shannon reported **zero false positives** for XSS, accurately confirming the application's security controls.
+</Info>
+
+## Impact summary
+
+<Warning>
+  **Combined impact:** Complete application and infrastructure compromise:
+  
+  1. **Root shell access** via command injection in debug endpoint
+  2. **Authentication bypass** via legacy v1 API
+  3. **Privilege escalation** via mass assignment
+  4. **Complete database access** via SQL injection
+  5. **Horizontal access** to all user accounts via IDOR/BOLA
+  6. **API key exfiltration** via excessive data exposure
+</Warning>
+
+## Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total vulnerabilities | 15 |
+| Critical severity | 7 |
+| High severity | 6 |
+| Medium severity | 2 |
+| Runtime | 1.2 hours |
+| API cost | ~$48 USD |
+| False positives | 0 |
+| XSS defenses validated | ✓ |
+
+## Key takeaways
+
+<CardGroup cols={2}>
+  <Card title="Hidden endpoints are high-risk" icon="eye-slash">
+    The debug endpoint was discovered through code analysis, not enumeration
+  </Card>
+  <Card title="Legacy versions create backdoors" icon="door-open">
+    V1 API provided complete bypass of V2 security controls
+  </Card>
+  <Card title="Mass assignment is critical" icon="shield-xmark">
+    Input filtering prevents privilege escalation attacks
+  </Card>
+  <Card title="False positives matter" icon="circle-check">
+    Correctly validating strong defenses is as important as finding vulnerabilities
+  </Card>
+</CardGroup>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Full report" icon="file-pdf" href="https://github.com/KeygraphHQ/shannon/blob/main/sample-reports/shannon-report-capital-api.md">
+    View complete report in GitHub
+  </Card>
+  <Card title="c{api}tal repository" icon="github" href="https://github.com/Checkmarx/capital">
+    Checkmarx c{api}tal source code
+  </Card>
+  <Card title="Test your API" icon="rocket" href="/quickstart">
+    Run Shannon against your API
+  </Card>
+  <Card title="API security coverage" icon="shield" href="/coverage/vulnerability-types">
+    OWASP API Top 10 coverage
+  </Card>
+</CardGroup>

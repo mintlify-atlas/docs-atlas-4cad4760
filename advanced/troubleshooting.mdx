@@ -1,0 +1,141 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues and solutions when running Shannon'
+---
+
+This guide covers common issues you may encounter when running Shannon and how to resolve them.
+
+## Repository Issues
+
+### Repository Not Found
+
+**Problem**: Error message stating repository not found.
+
+**Solution**: The `REPO` parameter must be a folder name inside `./repos/`, not an absolute path. Clone or symlink your repository there first:
+
+```bash
+ln -s /path/to/repo ./repos/my-repo
+```
+
+## Temporal Issues
+
+### Temporal Not Ready
+
+**Problem**: Shannon fails to start with "Temporal not ready" error.
+
+**Solution**: Wait for the health check to complete or check Temporal logs:
+
+```bash
+docker compose logs temporal
+```
+
+### Worker Not Processing
+
+**Problem**: Workflows are queued but not executing.
+
+**Solution**: Check if all containers are running:
+
+```bash
+docker compose ps
+```
+
+Ensure the worker container is healthy and running.
+
+## State and Data Issues
+
+### Reset State
+
+**Problem**: Need to completely reset Shannon's state and data.
+
+**Solution**: Stop Shannon with full cleanup:
+
+```bash
+./shannon stop CLEAN=true
+```
+
+<Warning>
+This will delete all workflow data, audit logs, and workspaces. Make sure to back up any reports you need.
+</Warning>
+
+## Network Issues
+
+### Local Applications Unreachable
+
+**Problem**: Shannon cannot connect to applications running on `localhost`.
+
+**Solution**: Docker containers cannot reach `localhost` on your host machine. Use `host.docker.internal` instead:
+
+```bash
+./shannon start URL=http://host.docker.internal:3000 REPO=repo-name
+```
+
+See [Platform-Specific Instructions](/advanced/platform-specific) for more details.
+
+## Tool and Performance Issues
+
+### Missing Tools
+
+**Problem**: Errors about missing nmap, subfinder, or whatweb tools.
+
+**Solution**: Use `PIPELINE_TESTING=true` to skip external tools with graceful degradation:
+
+```bash
+./shannon start URL=https://example.com REPO=repo-name PIPELINE_TESTING=true
+```
+
+This mode is useful for quick testing but may reduce the depth of reconnaissance.
+
+### Container Permission Issues
+
+**Problem**: Permission denied errors when running Docker commands or accessing output files.
+
+**Solution**: On Linux, you may need to run commands with `sudo` depending on your Docker setup:
+
+```bash
+sudo ./shannon start URL=https://example.com REPO=repo-name
+```
+
+Alternatively, add your user to the `docker` group:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+Log out and back in for the changes to take effect.
+
+## API and Authentication Issues
+
+### Rate Limiting
+
+**Problem**: Hitting Anthropic API rate limits during testing.
+
+**Solution**: If using Anthropic subscription plans with a rolling 5-hour window, add retry configuration to your config file:
+
+```yaml
+pipeline:
+  retry_preset: subscription          # Extends max backoff to 6h, 100 retries
+  max_concurrent_pipelines: 2         # Run 2 of 5 pipelines at a time
+```
+
+The `max_concurrent_pipelines` setting (1-5, default: 5) controls how many vulnerability pipelines run simultaneously. Lower values reduce burst API usage but increase total runtime.
+
+### Authentication Errors
+
+**Problem**: API key authentication fails.
+
+**Solution**: Verify your API key is correctly set in the `.env` file:
+
+```bash
+cat .env | grep ANTHROPIC_API_KEY
+```
+
+Ensure there are no extra spaces or quotes around the key value.
+
+## Getting Help
+
+If you encounter issues not covered here:
+
+- Check the [FAQ](/advanced/faq) for frequently asked questions
+- Review [Limitations](/advanced/limitations) to understand known constraints
+- Join our [Discord](https://discord.gg/KAqzSHHpRt) for community support
+- Report bugs via [GitHub Issues](https://github.com/KeygraphHQ/shannon/issues)

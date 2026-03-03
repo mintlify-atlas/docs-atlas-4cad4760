@@ -1,0 +1,190 @@
+---
+title: 'Limitations'
+description: 'Important disclaimers and limitations of Shannon'
+---
+
+Before using Shannon, please review these important limitations and guidelines.
+
+## Production Environment Warning
+
+<Warning>
+**DO NOT run Shannon on production environments.**
+
+Shannon is designed to actively execute attacks to confirm vulnerabilities. This process can have mutative effects on the target application and its data.
+</Warning>
+
+### Intended Environments
+
+Shannon is intended **exclusively** for use on:
+
+- Sandboxed environments
+- Staging environments
+- Local development environments
+- Test environments where data integrity is not a concern
+
+### Potential Mutative Effects
+
+Shannon's exploitation agents can cause the following effects:
+
+- Creating new users or accounts
+- Modifying existing data
+- Deleting data
+- Compromising test accounts
+- Triggering unintended side effects from injection attacks
+- Executing commands on the target system
+- Making unauthorized API calls
+
+## Legal and Ethical Use
+
+<Warning>
+**You must have explicit, written authorization** from the owner of the target system before running Shannon.
+</Warning>
+
+Shannon is designed for legitimate security auditing purposes only. Unauthorized scanning and exploitation of systems you do not own is **illegal** and can be prosecuted under laws such as:
+
+- Computer Fraud and Abuse Act (CFAA) in the United States
+- Computer Misuse Act in the United Kingdom
+- Similar cybercrime laws in other jurisdictions
+
+**Keygraph is not responsible for any misuse of Shannon.**
+
+## LLM and Automation Limitations
+
+### Verification Required
+
+<Note>
+While Shannon employs a "proof-by-exploitation" methodology to eliminate false positives, the underlying LLMs can still generate hallucinated or weakly-supported content in the final report.
+</Note>
+
+**Human oversight is essential** to:
+
+- Validate the legitimacy of reported findings
+- Verify the severity classifications
+- Confirm the exploitability claims
+- Review the proof-of-concept evidence
+
+### Comprehensiveness
+
+Shannon Lite's analysis may not be exhaustive due to:
+
+- Inherent limitations of LLM context windows
+- Time constraints on agent execution
+- Complexity of the target application
+
+For more comprehensive, graph-based analysis of your entire codebase, **Shannon Pro** leverages an advanced data flow analysis engine inspired by the [LLMDFA paper](https://arxiv.org/abs/2402.10754) to ensure deeper and more thorough coverage.
+
+## Scope of Analysis
+
+### Targeted Vulnerabilities
+
+Shannon Lite specifically targets the following classes of **exploitable** vulnerabilities:
+
+- **Broken Authentication** - Login bypass, session hijacking, weak credentials
+- **Broken Authorization** - Privilege escalation, IDOR, missing access controls
+- **Injection** - SQL injection, command injection, LDAP injection
+- **Cross-Site Scripting (XSS)** - Stored, reflected, and DOM-based XSS
+- **Server-Side Request Forgery (SSRF)** - Internal service access, cloud metadata exploitation
+
+### What Shannon Lite Does Not Cover
+
+This list is **not exhaustive** of all potential security risks. Shannon Lite's "proof-by-exploitation" model means it will not report on issues it cannot actively exploit, such as:
+
+- Vulnerable third-party libraries or dependencies
+- Insecure configurations (weak cipher suites, missing headers)
+- Business logic flaws without clear exploitation vectors
+- Denial of service vulnerabilities
+- Information disclosure without exploitable impact
+- Client-side security issues
+
+These types of deep static-analysis findings are a core focus of the advanced analysis engine in **Shannon Pro**.
+
+## Cost and Performance
+
+### Time Requirements
+
+<Note>
+A full Shannon Lite test run typically takes **1 to 1.5 hours** to complete.
+</Note>
+
+Actual runtime depends on:
+
+- Application complexity
+- Number of endpoints and features
+- Authentication complexity
+- API rate limits
+- Number of vulnerability findings
+
+### API Costs
+
+<Warning>
+Running the full test using Anthropic's Claude 4.5 Sonnet model may incur costs of approximately **$50 USD**.
+</Warning>
+
+Costs vary based on:
+
+- Model pricing (Anthropic API rates)
+- Application complexity
+- Number of agents executed
+- Length of analysis and exploitation phases
+
+### Cost Optimization
+
+To manage costs:
+
+- Use `PIPELINE_TESTING=true` for faster, cheaper test runs during development
+- Configure `max_concurrent_pipelines` to reduce burst API usage
+- Resume failed runs using workspaces instead of restarting from scratch
+- Use AWS Bedrock or Google Vertex AI for potentially different pricing models
+
+## White-Box Testing Only
+
+<Note>
+Shannon Lite is designed for **white-box (source-available)** application security testing.
+</Note>
+
+Shannon expects:
+
+- Access to your application's source code
+- Access to the repository layout
+- Ability to analyze code structure and dependencies
+
+Black-box testing (without source code access) is not supported in Shannon Lite.
+
+## Other Considerations
+
+### Model Dependency
+
+Shannon is built on top of the Anthropic Agent SDK and is optimized for Anthropic Claude models. While experimental support exists for alternative providers via router mode, output quality depends heavily on the model used.
+
+### Network Requirements
+
+Shannon requires:
+
+- Internet access for API calls to Anthropic (or alternative providers)
+- Network access to the target application
+- Docker networking properly configured
+
+### Resource Requirements
+
+Shannon requires:
+
+- Docker installed and running
+- Sufficient disk space for audit logs and deliverables
+- Memory for multiple concurrent Docker containers
+- CPU resources for parallel agent execution
+
+## Responsibility and Liability
+
+<Warning>
+As a user of Shannon, **you are responsible for your actions and assume all liability**.
+</Warning>
+
+This includes:
+
+- Obtaining proper authorization before testing
+- Ensuring testing is performed in appropriate environments
+- Validating and verifying all findings
+- Handling discovered vulnerabilities responsibly
+- Complying with all applicable laws and regulations
+
+For questions or concerns, contact [shannon@keygraph.io](mailto:shannon@keygraph.io).

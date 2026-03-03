@@ -1,0 +1,655 @@
+---
+title: 'Workspaces & Resume'
+description: 'Workspace system, git checkpointing, and resume functionality'
+---
+
+Shannon's workspace system enables crash recovery and resume functionality through git-based checkpointing. This page explains how workspaces work and how to resume interrupted or failed runs.
+
+## What is a Workspace?
+
+A workspace is a named directory in `audit-logs/` that stores all state for a penetration test run:
+
+```
+audit-logs/
+└── example-com_shannon-1234567890/  # Workspace directory
+    ├── session.json                  # Session metadata and metrics
+    ├── workflow.log                  # Unified human-readable log
+    ├── agents/                       # Per-agent execution logs
+    ├── prompts/                      # Prompt snapshots
+    └── deliverables/                 # Security reports
+```
+
+### Workspace Naming
+
+Workspaces are named automatically or explicitly:
+
+<Tabs>
+  <Tab title="Auto-Named">
+    **Format:** `{hostname}_{workflowId}`
+    
+    Example:
+    ```bash
+    ./shannon start URL=https://example.com REPO=my-repo
+    # Creates: audit-logs/example-com_shannon-1771007534808/
+    ```
+    
+    **Components:**
+    - `hostname`: Sanitized domain from target URL
+    - `workflowId`: Temporal workflow ID (timestamp-based)
+  </Tab>
+  
+  <Tab title="Named">
+    **Format:** User-provided string
+    
+    Example:
+    ```bash
+    ./shannon start URL=https://example.com REPO=my-repo WORKSPACE=q1-audit
+    # Creates: audit-logs/q1-audit/
+    ```
+    
+    **Benefits:**
+    - Easier to remember and reference
+    - Semantic naming (e.g., `production-q1-2025`)
+    - Simplified resume commands
+  </Tab>
+</Tabs>
+
+### Session Metadata
+
+Every workspace contains `session.json` with comprehensive tracking:
+
+```json
+{
+  "session": {
+    "id": "example-com_shannon-1234567890",
+    "webUrl": "https://example.com",
+    "repoPath": "./repos/my-repo",
+    "status": "in-progress",
+    "createdAt": "2025-03-03T10:00:00.000Z",
+    "completedAt": null,
+    "originalWorkflowId": "shannon-1234567890",
+    "checkpointHash": "abc123def456...",
+    "resume_history": [
+      {
+        "timestamp": "2025-03-03T11:30:00.000Z",
+        "workflow_id": "shannon-1234567891",
+        "terminated_workflows": ["shannon-1234567890"],
+        "checkpoint_hash": "abc123def456...",
+        "completed_agents": ["pre-recon", "recon", "injection-vuln"]
+      }
+    ]
+  },
+  "metrics": {
+    "total_cost_usd": 12.34,
+    "total_duration_ms": 3600000,
+    "phases": { /* ... */ },
+    "agents": {
+      "pre-recon": {
+        "status": "completed",
+        "attempts": 1,
+        "cost_usd": 2.50,
+        "duration_ms": 120000,
+        "input_tokens": 50000,
+        "output_tokens": 15000,
+        "num_turns": 45,
+        "started_at": "2025-03-03T10:00:00.000Z",
+        "completed_at": "2025-03-03T10:02:00.000Z"
+      }
+    }
+  }
+}
+```
+
+**Key fields:**
+- `checkpointHash` — Git commit SHA for deliverables
+- `originalWorkflowId` — First workflow ID that created this workspace
+- `resume_history` — Array of all resume attempts
+- `agents.{name}.status` — Agent completion state
+
+## Git Checkpointing
+
+Shannon uses git commits to create crash-safe checkpoints after each agent completes.
+
+### How Checkpointing Works
+
+<Steps>
+  <Step title="Agent Completion">
+    After an agent successfully produces its deliverable, Shannon commits the files:
+    
+    ```bash
+    cd repos/my-repo
+    git add deliverables/{agent}_*.md
+    git commit -m "[Shannon] {agent} completed"
+    ```
+    
+    **Location:** `src/services/git-manager.ts`
+  </Step>
+  
+  <Step title="Checkpoint Hash">
+    The commit SHA is saved to `session.json`:
+    
+    ```json
+    {
+      "session": {
+        "checkpointHash": "abc123def456..."
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Concurrency Safety">
+    Git operations are serialized via `GitSemaphore` to prevent `index.lock` conflicts during parallel agent execution.
+    
+    **Implementation:** `src/services/git-manager.ts:84`
+  </Step>
+</Steps>
+
+### Example Checkpoint Log
+
+```bash
+$ cd repos/my-repo
+$ git log --oneline
+abc123d [Shannon] report completed
+def456e [Shannon] authz-exploit completed
+789abc1 [Shannon] ssrf-exploit completed
+...
+123def4 [Shannon] recon completed
+456abc7 [Shannon] pre-recon completed
+```
+
+### Git Repository Requirements
+
+<Warning>
+  The target repository in `repos/` must be a git repository. Shannon uses `git` for checkpointing. If the directory is not a git repo, initialize one:
+  
+  ```bash
+  cd repos/my-repo
+  git init
+  git add .
+  git commit -m "Initial commit"
+  ```
+</Warning>
+
+**Validation:** `src/services/git-manager.ts:16`
+
+## Resume Functionality
+
+### When to Resume
+
+Resume is useful when:
+
+<CardGroup cols={2}>
+  <Card title="Crash Recovery" icon="rotate-right">
+    Worker crashed or container restarted
+  </Card>
+  <Card title="Rate Limits" icon="clock">
+    Hit API rate limits and exhausted retries
+  </Card>
+  <Card title="Partial Completion" icon="list-check">
+    Some agents completed before failure
+  </Card>
+  <Card title="Incremental Testing" icon="forward-step">
+    Run phases incrementally for debugging
+  </Card>
+</CardGroup>
+
+### How Resume Works
+
+Resume is **fully automatic** — just rerun the same command with `WORKSPACE=`:
+
+```bash
+# Original run (failed after recon)
+./shannon start URL=https://example.com REPO=my-repo WORKSPACE=my-audit
+
+# Resume (same command)
+./shannon start URL=https://example.com REPO=my-repo WORKSPACE=my-audit
+```
+
+Shannon detects completed agents from `session.json` and skips them.
+
+### Resume State Loading
+
+<Steps>
+  <Step title="Workspace Detection">
+    **Function:** `loadResumeState()` in `src/temporal/activities.ts`
+    
+    Checks if workspace exists in `audit-logs/`:
+    
+    ```typescript
+    const workspacePath = path.join(
+      auditLogsDir,
+      resumeFromWorkspace
+    );
+    
+    if (!await fs.pathExists(workspacePath)) {
+      throw new Error(`Workspace not found: ${resumeFromWorkspace}`);
+    }
+    ```
+  </Step>
+  
+  <Step title="Session Validation">
+    Loads `session.json` and validates:
+    
+    - Workspace exists
+    - URL matches original target (prevents cross-target contamination)
+    - Checkpoint hash is valid git commit
+    
+    ```typescript
+    const sessionData = await readJson<SessionJson>(sessionPath);
+    
+    if (sessionData.session.webUrl !== webUrl) {
+      throw new PentestError(
+        `URL mismatch: workspace was for ${sessionData.session.webUrl}`,
+        'validation',
+        false,
+        {},
+        ErrorCode.INVALID_TARGET_ERROR
+      );
+    }
+    ```
+    
+    **Location:** `src/temporal/activities.ts:340`
+  </Step>
+  
+  <Step title="Deliverable Cross-Check">
+    For each completed agent in `session.json`, verify the deliverable file exists:
+    
+    ```typescript
+    const deliverablePath = path.join(
+      repoPath,
+      'deliverables',
+      agentDef.deliverableFilename
+    );
+    
+    if (!await fileExists(deliverablePath)) {
+      logger.warn(
+        `Agent ${agent} marked complete but deliverable missing. ` +
+        `Will re-run.`
+      );
+      continue; // Don't mark as completed
+    }
+    ```
+    
+    This handles edge cases where `session.json` was written but deliverable wasn't committed.
+  </Step>
+  
+  <Step title="Return Resume State">
+    Returns validated state to workflow:
+    
+    ```typescript
+    return {
+      workspaceName: resumeFromWorkspace,
+      originalUrl: sessionData.session.webUrl,
+      completedAgents: validatedAgents,
+      checkpointHash: sessionData.session.checkpointHash,
+      originalWorkflowId: sessionData.session.originalWorkflowId,
+    };
+    ```
+    
+    **Type:** `ResumeState` in `src/temporal/shared.ts:20`
+  </Step>
+</Steps>
+
+### Git Workspace Restoration
+
+<Steps>
+  <Step title="Checkout Checkpoint">
+    **Function:** `restoreGitCheckpoint()` in `src/temporal/activities.ts`
+    
+    Restores the repo to the last successful checkpoint:
+    
+    ```bash
+    cd repos/my-repo
+    git reset --hard {checkpointHash}
+    ```
+    
+    This ensures a clean state before resuming.
+  </Step>
+  
+  <Step title="Clean Incomplete Deliverables">
+    For agents that didn't complete, remove any partial deliverables:
+    
+    ```typescript
+    for (const agent of incompleteAgents) {
+      const agentDef = AGENTS[agent];
+      const deliverablePath = path.join(
+        repoPath,
+        'deliverables',
+        agentDef.deliverableFilename
+      );
+      
+      if (await fileExists(deliverablePath)) {
+        await fs.remove(deliverablePath);
+        logger.info(`Removed incomplete deliverable: ${agent}`);
+      }
+    }
+    ```
+    
+    This prevents agents from skipping execution due to stale files.
+  </Step>
+</Steps>
+
+**Location:** `src/temporal/activities.ts:378`
+
+### Resume Logging
+
+Every resume attempt is recorded in `session.json`:
+
+```json
+{
+  "session": {
+    "resume_history": [
+      {
+        "timestamp": "2025-03-03T12:00:00.000Z",
+        "workflow_id": "shannon-1234567891",
+        "terminated_workflows": ["shannon-1234567890"],
+        "checkpoint_hash": "abc123def456",
+        "completed_agents": [
+          "pre-recon",
+          "recon",
+          "injection-vuln",
+          "xss-vuln"
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Function:** `recordResumeAttempt()` in `src/temporal/activities.ts:429`
+
+This also logs to `workflow.log`:
+
+```
+[2025-03-03 12:00:00] === RESUME ===
+[2025-03-03 12:00:00] Workspace: my-audit
+[2025-03-03 12:00:00] Checkpoint: abc123def456
+[2025-03-03 12:00:00] Completed agents: pre-recon, recon, injection-vuln, xss-vuln
+[2025-03-03 12:00:00] Skipping 4 agents, running 9 remaining
+```
+
+## Workflow Integration
+
+The resume flow is integrated into the main workflow at `src/temporal/workflows.ts:186`:
+
+```typescript
+let resumeState: ResumeState | null = null;
+
+if (input.resumeFromWorkspace) {
+  // 1. Load resume state
+  resumeState = await a.loadResumeState(
+    input.resumeFromWorkspace,
+    input.webUrl,
+    input.repoPath
+  );
+  
+  // 2. Restore git checkpoint
+  const incompleteAgents = ALL_AGENTS.filter(
+    (agentName) => !resumeState!.completedAgents.includes(agentName)
+  );
+  
+  await a.restoreGitCheckpoint(
+    input.repoPath,
+    resumeState.checkpointHash,
+    incompleteAgents
+  );
+  
+  // 3. Short-circuit if all completed
+  if (resumeState.completedAgents.length === ALL_AGENTS.length) {
+    state.status = 'completed';
+    state.completedAgents = [...resumeState.completedAgents];
+    return state;
+  }
+  
+  // 4. Record resume attempt
+  await a.recordResumeAttempt(
+    activityInput,
+    input.terminatedWorkflows || [],
+    resumeState.checkpointHash,
+    resumeState.originalWorkflowId,
+    resumeState.completedAgents
+  );
+}
+
+// 5. Use shouldSkip() helper throughout workflow
+const shouldSkip = (agentName: string): boolean => {
+  return resumeState?.completedAgents.includes(agentName) ?? false;
+};
+```
+
+### Agent Skipping Logic
+
+In each phase, the workflow checks if agents should be skipped:
+
+```typescript
+// Sequential agents
+if (!shouldSkip('pre-recon')) {
+  state.agentMetrics['pre-recon'] = await a.runPreReconAgent(input);
+  state.completedAgents.push('pre-recon');
+} else {
+  log.info('Skipping pre-recon (already complete)');
+  state.completedAgents.push('pre-recon');
+}
+
+// Parallel agents
+for (const config of pipelineConfigs) {
+  if (!shouldSkip(config.vulnAgent) || !shouldSkip(config.exploitAgent)) {
+    pipelineThunks.push(
+      () => runVulnExploitPipeline(config.vulnType, config.runVuln, config.runExploit)
+    );
+  } else {
+    log.info(`Skipping entire ${config.vulnType} pipeline (both agents complete)`);
+    state.completedAgents.push(config.vulnAgent, config.exploitAgent);
+  }
+}
+```
+
+## Listing Workspaces
+
+View all workspaces with the `workspaces` command:
+
+```bash
+./shannon workspaces
+```
+
+**Output:**
+
+```
+=== Shannon Workspaces ===
+
+  WORKSPACE                      URL                            STATUS          DURATION    COST      
+  ────────────────────────────────────────────────────────────────────────────────────────────────────
+  my-audit                       https://example.com            in-progress     45m         $12.34     (resumable)
+  example-com_shannon-1234…      https://example.com            completed       1h 15m      $48.50    
+  prod-q1-2025                   https://prod.example.com       failed          30m         $8.20      (resumable)
+
+3 workspaces found (2 resumable)
+
+Resume with: ./shannon start URL=<url> REPO=<repo> WORKSPACE=<name>
+```
+
+**Implementation:** `src/temporal/workspaces.ts`
+
+### Workspace Status
+
+<Tabs>
+  <Tab title="in-progress">
+    Workflow is currently running or was interrupted.
+    
+    **Resumable:** Yes
+  </Tab>
+  
+  <Tab title="completed">
+    All 13 agents completed successfully.
+    
+    **Resumable:** No (would short-circuit immediately)
+  </Tab>
+  
+  <Tab title="failed">
+    Workflow failed and exhausted retries.
+    
+    **Resumable:** Yes (skips completed agents)
+  </Tab>
+</Tabs>
+
+## URL Validation on Resume
+
+<Warning>
+  **Critical safety feature:** Shannon enforces URL matching between the original workspace and the resume attempt to prevent cross-target contamination.
+</Warning>
+
+```typescript
+if (sessionData.session.webUrl !== webUrl) {
+  throw new PentestError(
+    `URL mismatch: workspace created for ${sessionData.session.webUrl}, ` +
+    `but resume attempt used ${webUrl}`,
+    'validation',
+    false,
+    { workspaceUrl: sessionData.session.webUrl, resumeUrl: webUrl },
+    ErrorCode.INVALID_TARGET_ERROR
+  );
+}
+```
+
+**Location:** `src/temporal/activities.ts:349`
+
+**Example error:**
+
+```bash
+./shannon start URL=https://prod.example.com REPO=my-repo WORKSPACE=staging-audit
+
+❌ Error: URL mismatch
+   Workspace created for: https://staging.example.com
+   Resume attempt used:   https://prod.example.com
+   
+   This is a safety feature to prevent cross-target contamination.
+```
+
+## Edge Cases Handled
+
+### Partial Deliverable Corruption
+
+<Accordion title="Scenario">
+  Agent marked as completed in `session.json`, but deliverable file is missing or corrupted.
+</Accordion>
+
+<Accordion title="Solution">
+  Cross-check deliverable existence during `loadResumeState()`:
+  
+  ```typescript
+  if (!await fileExists(deliverablePath)) {
+    logger.warn(`Deliverable missing for ${agent}. Will re-run.`);
+    continue; // Don't include in completedAgents
+  }
+  ```
+  
+  Agent will be re-run on resume.
+</Accordion>
+
+---
+
+### Multiple Resume Attempts
+
+<Accordion title="Scenario">
+  User resumes multiple times (e.g., after multiple failures).
+</Accordion>
+
+<Accordion title="Solution">
+  All resume attempts are logged in `resume_history` array with timestamps, workflow IDs, and completed agents.
+  
+  The workflow always uses the latest checkpoint hash and completed agents list.
+</Accordion>
+
+---
+
+### Terminated Workflows
+
+<Accordion title="Scenario">
+  Previous workflow is still running when user starts a resume.
+</Accordion>
+
+<Accordion title="Solution">
+  Shannon CLI terminates conflicting workflows before starting resume:
+  
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo WORKSPACE=my-audit
+  
+  ⚠ Found running workflow: shannon-1234567890
+  ✓ Terminated and starting resume...
+  ```
+  
+  Terminated workflow IDs are recorded in `session.json.resume_history[].terminated_workflows`.
+</Accordion>
+
+---
+
+### Parallel Agent Failures
+
+<Accordion title="Scenario">
+  During Phase 3 (5 parallel vuln agents), 2 agents complete and 3 fail.
+</Accordion>
+
+<Accordion title="Solution">
+  Only the 2 completed agents are checkpointed. On resume:
+  
+  - The 2 completed agents are skipped
+  - The 3 failed agents are re-run
+  - Parallel execution resumes normally
+  
+  **Location:** `src/temporal/workflows.ts:436`
+</Accordion>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Named Workspaces" icon="tag">
+    For production audits, use semantic names:
+    
+    ```bash
+    WORKSPACE=prod-q1-2025
+    WORKSPACE=staging-pre-launch
+    ```
+  </Card>
+  
+  <Card title="Monitor Progress" icon="gauge">
+    Use `./shannon logs` and Temporal UI to monitor:
+    
+    ```bash
+    ./shannon logs
+    open http://localhost:8233
+    ```
+  </Card>
+  
+  <Card title="Clean Old Workspaces" icon="trash">
+    Periodically remove old workspaces:
+    
+    ```bash
+    rm -rf audit-logs/old-workspace-name
+    ```
+  </Card>
+  
+  <Card title="Backup Workspaces" icon="floppy-disk">
+    Archive completed workspaces for compliance:
+    
+    ```bash
+    tar -czf prod-q1-2025.tar.gz audit-logs/prod-q1-2025/
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand the underlying system design
+  </Card>
+  <Card title="Pipeline Phases" icon="arrow-progress" href="/concepts/pipeline-phases">
+    Learn about the 5-phase execution model
+  </Card>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Explore the 13 security agents
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Customize workspace output paths
+  </Card>
+</CardGroup>

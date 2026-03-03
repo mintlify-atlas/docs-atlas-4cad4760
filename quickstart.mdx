@@ -1,80 +1,293 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Shannon running and execute your first pentest in under 5 minutes
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+Before you begin, ensure you have:
 
 <CardGroup cols={2}>
+  <Card title="Docker" icon="docker">
+    Container runtime for running Shannon's components
+  </Card>
+  
+  <Card title="AI Provider" icon="key">
+    Anthropic API key, Claude Code OAuth token, AWS Bedrock, or Google Vertex AI
+  </Card>
+</CardGroup>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+<Info>
+  Don't have Docker? [Install Docker](https://docs.docker.com/get-docker/) for your platform.
+</Info>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+## Run your first pentest
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+Follow these steps to run Shannon against a target application:
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+<Steps>
+  <Step title="Clone Shannon">
+    Clone the Shannon repository and navigate to the directory:
 
+    ```bash
+    git clone https://github.com/KeygraphHQ/shannon.git
+    cd shannon
+    ```
+  </Step>
+  
+  <Step title="Configure credentials">
+    Choose one of the following methods to configure your AI provider credentials:
+
+    <CodeGroup>
+      ```bash Environment Variables
+      export ANTHROPIC_API_KEY="your-api-key"
+      export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+      ```
+
+      ```bash .env File
+      cat > .env << 'EOF'
+      ANTHROPIC_API_KEY=your-api-key
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+      EOF
+      ```
+    </CodeGroup>
+
+    <Note>
+      Get your Anthropic API key from the [Anthropic Console](https://console.anthropic.com).
+    </Note>
+  </Step>
+  
+  <Step title="Prepare your repository">
+    Shannon expects target repositories in the `./repos/` directory. Clone or copy your target application:
+
+    <CodeGroup>
+      ```bash Clone Repository
+      git clone https://github.com/your-org/your-repo.git ./repos/your-repo
+      ```
+
+      ```bash Symlink Existing
+      ln -s /path/to/existing/repo ./repos/your-repo
+      ```
+
+      ```bash Multi-Repository App
+      mkdir ./repos/your-app
+      cd ./repos/your-app
+      git clone https://github.com/your-org/frontend.git
+      git clone https://github.com/your-org/backend.git
+      ```
+    </CodeGroup>
+
+    <Warning>
+      The `REPO` parameter refers to a folder name inside `./repos/`, not an absolute path.
+    </Warning>
+  </Step>
+  
+  <Step title="Start the pentest">
+    Launch Shannon with a single command:
+
+    ```bash
+    ./shannon start URL=https://your-app.com REPO=your-repo
+    ```
+
+    Shannon will:
+    - Build the necessary Docker containers
+    - Start the workflow engine
+    - Return a workflow ID
+    - Run the pentest in the background
+
+    <Info>
+      The pentest runs asynchronously. You can monitor progress using the commands in the next step.
+    </Info>
+  </Step>
+  
+  <Step title="Monitor progress">
+    Track your pentest in real-time:
+
+    <CodeGroup>
+      ```bash View Logs
+      ./shannon logs
+      ```
+
+      ```bash Query Workflow
+      ./shannon query ID=shannon-1234567890
+      ```
+
+      ```bash Web UI
+      open http://localhost:8233
+      ```
+    </CodeGroup>
+
+    The Temporal Web UI at `http://localhost:8233` provides detailed workflow visualization and progress tracking.
+  </Step>
+  
+  <Step title="Review results">
+    Once complete, find your security assessment report in:
+
+    ```
+    audit-logs/{hostname}_{sessionId}/deliverables/comprehensive_security_assessment_report.md
+    ```
+
+    The report includes:
+    - Executive summary of all findings
+    - Detailed vulnerability descriptions
+    - Step-by-step exploitation proof-of-concepts
+    - Severity ratings and impact analysis
+  </Step>
+</Steps>
+
+## Testing local applications
+
+Docker containers cannot reach `localhost` on your host machine. Use `host.docker.internal` instead:
+
+```bash
+./shannon start URL=http://host.docker.internal:3000 REPO=repo-name
+```
+
+<Warning>
+  This works on macOS and Windows with Docker Desktop. On Linux, you may need to configure the Docker network differently.
+</Warning>
+
+## Example: Testing with configuration
+
+For applications requiring authentication, create a configuration file:
+
+<Steps>
+  <Step title="Create config file">
+    ```bash
+    cp configs/example-config.yaml configs/my-app-config.yaml
+    ```
+  </Step>
+  
+  <Step title="Edit configuration">
+    ```yaml configs/my-app-config.yaml
+    authentication:
+      login_type: form
+      login_url: "https://your-app.com/login"
+      credentials:
+        username: "test@example.com"
+        password: "yourpassword"
+        totp_secret: "LB2E2RX7XFHSTGCK"  # Optional for 2FA
+
+      login_flow:
+        - "Type $username into the email field"
+        - "Type $password into the password field"
+        - "Click the 'Sign In' button"
+
+      success_condition:
+        type: url_contains
+        value: "/dashboard"
+    ```
+  </Step>
+  
+  <Step title="Run with config">
+    ```bash
+    ./shannon start URL=https://your-app.com REPO=your-repo CONFIG=./configs/my-app-config.yaml
+    ```
+  </Step>
+</Steps>
+
+## Workspace management
+
+Shannon supports **workspaces** for resuming interrupted runs:
+
+<CodeGroup>
+  ```bash Named Workspace
+  # Start with custom name
+  ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+  
+  # Resume same workspace (skips completed agents)
+  ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+  ```
+
+  ```bash Auto-Named Workspace
+  # Resume auto-named workspace from previous run
+  ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=example-com_shannon-1771007534808
+  ```
+
+  ```bash List Workspaces
+  # View all workspaces and their status
+  ./shannon workspaces
+  ```
+</CodeGroup>
+
+<Info>
+  Shannon detects which agents completed successfully and picks up where it left off. Each agent's progress is checkpointed via git commits.
+</Info>
+
+## Common commands
+
+<CodeGroup>
+  ```bash Start Pentest
+  ./shannon start URL=https://example.com REPO=repo-name
+  ```
+
+  ```bash With Configuration
+  ./shannon start URL=https://example.com REPO=repo-name CONFIG=./configs/my-config.yaml
+  ```
+
+  ```bash Custom Output Directory
+  ./shannon start URL=https://example.com REPO=repo-name OUTPUT=./my-reports
+  ```
+
+  ```bash Monitor Logs
+  ./shannon logs
+  ```
+
+  ```bash Query Status
+  ./shannon query ID=shannon-1234567890
+  ```
+
+  ```bash Stop Shannon
+  ./shannon stop
+  ```
+
+  ```bash Full Cleanup
+  ./shannon stop CLEAN=true
+  ```
+</CodeGroup>
+
+## Expected runtime and costs
+
+<CardGroup cols={2}>
+  <Card title="Runtime" icon="clock">
+    A full test run typically takes **1 to 1.5 hours** to complete
+  </Card>
+  
+  <Card title="Cost" icon="dollar-sign">
+    Approximately **$50 USD** using Anthropic's Claude 4.5 Sonnet model
+  </Card>
 </CardGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Costs vary based on model pricing and application complexity. The system uses three model tiers: Haiku for summarization, Sonnet for analysis, and Opus for deep reasoning.
 </Note>
+
+## Important disclaimers
+
+<Warning>
+  **DO NOT run Shannon on production environments.** This is not a passive scanner. The exploitation agents actively execute attacks that can have mutative effects on the target application and its data.
+</Warning>
+
+<Warning>
+  **Legal requirement:** You must have explicit, written authorization from the owner of the target system before running Shannon. Unauthorized scanning and exploitation is illegal.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Platform-specific installation instructions and troubleshooting
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Configure authentication, 2FA, rate limits, and testing rules
+  </Card>
+  
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understanding Shannon's multi-agent architecture
+  </Card>
+  
+  <Card title="Sample Reports" icon="file-chart" href="/examples/overview">
+    See Shannon's capabilities with real penetration test results
+  </Card>
+</CardGroup>

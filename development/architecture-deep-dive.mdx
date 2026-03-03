@@ -1,0 +1,350 @@
+---
+title: 'Architecture Deep Dive'
+description: 'Technical architecture and design patterns in Shannon'
+---
+
+This guide provides a deep technical overview of Shannon's architecture, design patterns, and internal systems.
+
+## Architectural Overview
+
+Shannon emulates a human penetration tester's methodology using a sophisticated multi-agent architecture. It combines **white-box source code analysis** with **black-box dynamic exploitation** across four distinct phases.
+
+```
+                    ┌──────────────────────┐
+                    │    Reconnaissance    │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────┴───────────┐
+                    │          │           │
+                    ▼          ▼           ▼
+        ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+        │ Vuln Analysis   │ │ Vuln Analysis   │ │      ...        │
+        │  (Injection)    │ │     (XSS)       │ │                 │
+        └─────────┬───────┘ └─────────┬───────┘ └─────────┬───────┘
+                  │                   │                   │
+                  ▼                   ▼                   ▼
+        ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+        │  Exploitation   │ │  Exploitation   │ │      ...        │
+        │  (Injection)    │ │     (XSS)       │ │                 │
+        └─────────┬───────┘ └─────────┬───────┘ └─────────┬───────┘
+                  │                   │                   │
+                  └─────────┬─────────┴───────────────────┘
+                            │
+                            ▼
+                    ┌──────────────────────┐
+                    │      Reporting       │
+                    └──────────────────────┘
+```
+
+## Core Modules
+
+### Session Manager
+
+**Location**: `src/session-manager.ts`
+
+The session manager defines all agents and their relationships through the `AGENTS` registry:
+
+```typescript
+export const AGENTS: Record<AgentName, AgentDefinition> = {
+  'pre-recon': {
+    name: 'pre-recon',
+    displayName: 'Pre-recon agent',
+    prerequisites: [],
+    promptTemplate: 'pre-recon-code',
+    deliverableFilename: 'code_analysis_deliverable.md',
+    modelTier: 'large',
+  },
+  // ... more agents
+};
+```
+
+Key features:
+- Agent definitions with prerequisites (dependency graph)
+- Prompt template mappings
+- Deliverable filename conventions
+- Model tier selection (small/medium/large)
+
+**Related**: `src/types/agents.ts` defines the `AgentName` and `AgentDefinition` types.
+
+### Temporal Orchestration
+
+**Location**: `src/temporal/workflows.ts`, `src/temporal/activities.ts`
+
+Shannon uses [Temporal](https://temporal.io) for durable workflow orchestration with:
+
+- **Crash recovery** - Workflows resume after failures
+- **Queryable progress** - Real-time status via `getProgress` query
+- **Intelligent retry** - Automatic backoff for transient/billing errors
+- **Parallel execution** - 5 concurrent agents in vuln/exploit phases
+
+#### Workflow Structure
+
+The main workflow (`pentestPipelineWorkflow`) orchestrates five phases:
+
+1. **Pre-Recon** - External scans + source code analysis
+2. **Recon** - Attack surface mapping
+3. **Vulnerability Analysis** - 5 parallel agents (injection, xss, auth, authz, ssrf)
+4. **Exploitation** - 5 parallel agents (conditional on vuln findings)
+5. **Reporting** - Executive-level security report
+
+#### Activity Pattern
+
+Activities follow a two-layer pattern:
+
+1. **Activity wrapper** (`src/temporal/activities.ts`) - Thin wrapper with:
+   - Heartbeat loop for crash recovery
+   - Error classification
+   - Container lifecycle management
+
+2. **Service layer** (`src/services/`) - Business logic:
+   - Temporal-agnostic
+   - Accepts `ActivityLogger` interface
+   - Returns `Result<T, E>` for error handling
+
+### AI Integration
+
+**Location**: `src/ai/claude-executor.ts`
+
+Shannon uses the `@anthropic-ai/claude-agent-sdk` with:
+
+- `maxTurns: 10_000` - Allows long-running analysis
+- `bypassPermissions` mode - For autonomous operation
+- Playwright MCP - Browser automation
+- TOTP MCP tool - 2FA code generation
+
+#### Model Tiers
+
+Shannon uses three model tiers:
+
+- **Small** (`claude-haiku-4-5`) - Summarization, reporting
+- **Medium** (`claude-sonnet-4-6`) - Security analysis, exploitation
+- **Large** (`claude-opus-4-6`) - Deep reasoning, code analysis
+
+### Configuration System
+
+**Location**: `src/config-parser.ts`
+
+YAML configurations with JSON Schema validation (`config-schema.json`) support:
+
+- Authentication settings (form, SSO, API, basic auth)
+- MFA/TOTP credentials
+- Login flow templates
+- Success condition verification
+- Testing rules (avoid/focus areas)
+
+### Prompt System
+
+**Location**: `src/services/prompt-manager.ts`, `prompts/`
+
+Prompts are stored as `.txt` templates with:
+
+- **Variable substitution**: `{{TARGET_URL}}`, `{{CONFIG_CONTEXT}}`, `{{LOGIN_INSTRUCTIONS}}`
+- **Include directives**: `@include(shared/_target.txt)` for shared partials
+- **MCP server assignment**: Automatic Playwright instance allocation
+
+See [Custom Prompts](/development/custom-prompts) for customization details.
+
+## Five-Phase Pipeline
+
+### Phase 1: Pre-Reconnaissance
+
+**Agent**: `pre-recon`  
+**Template**: `prompts/pre-recon-code.txt`  
+**Deliverable**: `code_analysis_deliverable.md`
+
+**Purpose**: Build a comprehensive map of the application's attack surface through:
+
+- External scans (nmap, subfinder, whatweb)
+- Source code analysis
+- Technology stack identification
+- Initial entry point discovery
+
+### Phase 2: Reconnaissance
+
+**Agent**: `recon`  
+**Template**: `prompts/recon.txt`  
+**Deliverable**: `recon_deliverable.md`
+
+**Purpose**: Live application exploration via browser automation to:
+
+- Correlate code-level insights with real-world behavior
+- Map all entry points and API endpoints
+- Identify authentication mechanisms
+- Build detailed attack surface map
+
+### Phase 3: Vulnerability Analysis
+
+**Agents**: 5 parallel agents (injection, xss, auth, authz, ssrf)  
+**Templates**: `prompts/vuln-*.txt`  
+**Deliverables**: `*_analysis_deliverable.md` + `*_exploitation_queue.json`
+
+Using reconnaissance data, specialized agents hunt for flaws in parallel:
+
+- **Injection/SSRF**: Structured data flow analysis (source → sink)
+- **XSS**: Output context analysis and encoding verification
+- **Auth/Authz**: Logic flow analysis and access control gaps
+
+Each agent produces:
+- Analysis deliverable (findings documentation)
+- Exploitation queue (hypothesized exploitable paths)
+
+### Phase 4: Exploitation
+
+**Agents**: 5 parallel agents (conditional on queue presence)  
+**Templates**: `prompts/exploit-*.txt`  
+**Deliverables**: `*_exploitation_evidence.md`
+
+**"No Exploit, No Report" Policy**: Only validated exploits are reported.
+
+Agents receive hypothesized paths and attempt real-world attacks using:
+- Browser automation (Playwright)
+- Command-line tools
+- Custom scripts
+
+If a hypothesis cannot be exploited to demonstrate impact, it is discarded as a false positive.
+
+### Phase 5: Reporting
+
+**Agent**: `report`  
+**Template**: `prompts/report-executive.txt`  
+**Deliverable**: `comprehensive_security_assessment_report.md`
+
+Consolidates all validated findings into a professional report with:
+- Executive summary
+- Reproducible proof-of-concepts (copy-and-paste)
+- Severity classifications
+- Remediation guidance
+
+## Supporting Systems
+
+### Audit System
+
+**Location**: `src/audit/`
+
+Crash-safe append-only logging in `audit-logs/{hostname}_{sessionId}/`:
+
+- `session.json` - Session metrics and metadata
+- `agents/` - Per-agent execution logs
+- `prompts/` - Prompt snapshots for reproducibility
+- `deliverables/` - Final reports and evidence
+
+**WorkflowLogger** (`audit/workflow-logger.ts`) provides unified human-readable logs, backed by **LogStream** (`audit/log-stream.ts`) shared stream primitive.
+
+### Workspaces and Resume
+
+**Location**: `src/temporal/client.ts`, `src/temporal/activities.ts`
+
+Named workspaces via `WORKSPACE=<name>` or auto-named from URL+timestamp.
+
+**Resume mechanism**:
+1. `loadResumeState()` in activities loads `session.json`
+2. Validates deliverable existence for completed agents
+3. Restores git checkpoints
+4. Cleans up incomplete deliverables
+5. Skips completed agents in workflow execution
+
+Workspace listing via `src/temporal/workspaces.ts`.
+
+### Container Management
+
+**Location**: `src/services/container.ts`
+
+DI container per workflow provides:
+- Service initialization
+- Dependency injection
+- Shared instances across activities
+- Excludes `AuditSession` (parallel safety)
+
+### Error Handling
+
+**Location**: `src/services/error-handling.ts`, `src/types/errors.ts`
+
+Modular error handling with:
+
+- **ErrorCode enum** - Categorized error types
+- **Result type** - Explicit error propagation with typed success/error values
+- **Automatic retry** - 3 attempts per agent with backoff
+- **Non-retryable classification** - Permanent errors skip retry
+
+Error types include:
+- `AuthenticationError` - API key issues
+- `BillingError` - Rate limits, quota exceeded
+- `ConfigurationError` - Invalid config
+- `ExecutionLimitError` - Spending caps reached
+
+## Key Design Patterns
+
+### Configuration-Driven
+
+YAML configs with JSON Schema validation enable:
+- Type-safe configuration parsing
+- Validation at load time
+- Clear error messages for misconfigurations
+
+### Progressive Analysis
+
+Each phase builds on previous results:
+- Pre-recon → Recon (attack surface)
+- Recon → Vuln Analysis (entry points)
+- Vuln Analysis → Exploitation (hypotheses)
+- Exploitation → Reporting (validated findings)
+
+### SDK-First
+
+Claude Agent SDK handles autonomous analysis:
+- No prompt engineering required for tool use
+- Automatic MCP tool discovery
+- Self-directed browsing and exploration
+
+### Services Boundary
+
+Strict separation between Temporal and business logic:
+- Activities are thin wrappers (heartbeat + error handling)
+- Services own business logic (Temporal-agnostic)
+- Services accept `ActivityLogger`, return `Result<T, E>`
+- No Temporal imports in services
+
+### Modular Error Handling
+
+Explicit error propagation with:
+- `ErrorCode` enum for categorization
+- `Result<T, E>` monad for safe error handling
+- Automatic retry logic with backoff
+- Non-retryable classification for permanent errors
+
+## Code Style Guidelines
+
+See `CLAUDE.md` in the source repository for complete guidelines. Key points:
+
+- **Clarity over brevity** - Optimize for readability
+- **Function keyword** for top-level functions
+- **Explicit return types** on exported functions
+- **No nested ternaries** - Use if/else or switch
+- **Numbered steps** for multi-phase functions
+- **Timeless comments** - No conversation references
+
+## Key Files
+
+**Entry Points**:
+- `src/temporal/workflows.ts` - Main workflow
+- `src/temporal/activities.ts` - Activity wrappers
+- `src/temporal/worker.ts` - Worker entry point
+- `src/temporal/client.ts` - CLI client
+
+**Core Logic**:
+- `src/session-manager.ts` - Agent registry
+- `src/ai/claude-executor.ts` - SDK integration
+- `src/config-parser.ts` - Config parsing
+- `src/services/` - Business logic
+- `src/audit/` - Audit system
+
+**Configuration**:
+- `shannon` - CLI tool
+- `docker-compose.yml` - Container orchestration
+- `configs/` - YAML configs
+- `prompts/` - Prompt templates
+
+For more details on specific subsystems, see:
+- [Adding Agents](/development/adding-agents) - Extending Shannon with new agents
+- [Custom Prompts](/development/custom-prompts) - Customizing agent behavior

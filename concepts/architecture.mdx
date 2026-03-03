@@ -1,0 +1,348 @@
+---
+title: 'Architecture Overview'
+description: 'Understanding Shannon multi-agent architecture and system design'
+---
+
+Shannon is built on a sophisticated multi-agent architecture that emulates how human penetration testers work. This page explains the key architectural components and how they work together.
+
+## System Architecture
+
+Shannon combines white-box source code analysis with black-box dynamic exploitation through a coordinated multi-agent system:
+
+```
+                    ┌──────────────────────┐
+                    │    Reconnaissance    │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────┴───────────┐
+                    │          │           │
+                    ▼          ▼           ▼
+        ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+        │ Vuln Analysis   │ │ Vuln Analysis   │ │      ...        │
+        │  (Injection)    │ │     (XSS)       │ │                 │
+        └─────────┬───────┘ └─────────┬───────┘ └─────────┬───────┘
+                  │                   │                   │
+                  ▼                   ▼                   ▼
+        ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+        │  Exploitation   │ │  Exploitation   │ │      ...        │
+        │  (Injection)    │ │     (XSS)       │ │                 │
+        └─────────┬───────┘ └─────────┬───────┘ └─────────┬───────┘
+                  │                   │                   │
+                  └─────────┬─────────┴───────────────────┘
+                            │
+                            ▼
+                    ┌──────────────────────┐
+                    │      Reporting       │
+                    └──────────────────────┘
+```
+
+## Core Components
+
+### Temporal Orchestration
+
+Shannon uses [Temporal](https://temporal.io) for durable workflow orchestration:
+
+<CardGroup cols={2}>
+  <Card title="Crash Recovery" icon="rotate-right">
+    Automatically recovers from failures without losing progress
+  </Card>
+  <Card title="Queryable State" icon="gauge">
+    Real-time progress monitoring via `./shannon query`
+  </Card>
+  <Card title="Intelligent Retry" icon="arrows-rotate">
+    Exponential backoff with billing error recovery
+  </Card>
+  <Card title="Parallel Execution" icon="layer-group">
+    5 concurrent agents in vuln/exploit phases
+  </Card>
+</CardGroup>
+
+**Key files:**
+- `src/temporal/workflows.ts:8` — Main workflow orchestration (`pentestPipelineWorkflow`)
+- `src/temporal/activities.ts:8` — Activity wrappers with heartbeat and error classification
+- `src/temporal/worker.ts` — Worker entry point
+- `src/temporal/client.ts` — CLI client for workflow management
+
+### AI Agent SDK Integration
+
+Shannon leverages Anthropic's Claude Agent SDK as its reasoning engine:
+
+<Steps>
+  <Step title="SDK Configuration">
+    Uses `maxTurns: 10_000` and `bypassPermissions` mode for autonomous operation
+  </Step>
+  
+  <Step title="MCP Tools">
+    Integrates Playwright MCP for browser automation and TOTP generation for 2FA
+  </Step>
+  
+  <Step title="Model Tiers">
+    Three-tier strategy:
+    - **Small** (`claude-haiku-4-5`) for summarization
+    - **Medium** (`claude-sonnet-4-6`) for security analysis
+    - **Large** (`claude-opus-4-6`) for deep reasoning
+  </Step>
+</Steps>
+
+**Implementation:** `src/ai/claude-executor.ts:6`
+
+### Service Layer Architecture
+
+Business logic is separated from orchestration through a clean services layer:
+
+```typescript
+// Service boundary pattern
+src/services/               // Business logic (Temporal-agnostic)
+  ├── agent-execution.ts    // Agent lifecycle management
+  ├── error-handling.ts     // Error classification and retry
+  ├── container.ts          // DI container per workflow
+  ├── git-manager.ts        // Git checkpoint system
+  └── reporting.ts          // Report assembly
+
+src/temporal/               // Orchestration layer
+  ├── activities.ts         // Thin wrappers (heartbeat + classification)
+  └── workflows.ts          // Phase coordination
+```
+
+<Note>
+  **Design Principle:** Activities delegate to services. Services accept `ActivityLogger` and return `Result<T,E>`. No Temporal imports in services.
+</Note>
+
+### Agent Registry System
+
+All agents are defined in a centralized registry at `src/session-manager.ts:14`:
+
+```typescript
+const AGENTS: Record<AgentName, AgentDefinition> = {
+  'pre-recon': {
+    name: 'pre-recon',
+    displayName: 'Pre-recon agent',
+    prerequisites: [],
+    promptTemplate: 'pre-recon-code',
+    deliverableFilename: 'code_analysis_deliverable.md',
+    modelTier: 'large',
+  },
+  // ... 12 more agents
+}
+```
+
+Each agent definition includes:
+- **Prerequisites** — Which agents must complete first
+- **Prompt template** — Located in `prompts/`
+- **Deliverable filename** — Output artifact for validation
+- **Model tier** — Small/Medium/Large for cost optimization
+
+### MCP Agent Mapping
+
+To prevent browser automation conflicts, each agent is assigned to a specific Playwright instance:
+
+```typescript
+const MCP_AGENT_MAPPING: Record<string, PlaywrightAgent> = {
+  'pre-recon-code': 'playwright-agent1',
+  'recon': 'playwright-agent2',
+  // Phase 3: Vulnerability Analysis (5 parallel)
+  'vuln-injection': 'playwright-agent1',
+  'vuln-xss': 'playwright-agent2',
+  'vuln-auth': 'playwright-agent3',
+  'vuln-ssrf': 'playwright-agent4',
+  'vuln-authz': 'playwright-agent5',
+  // Phase 4: Exploitation (reuses same instances)
+  // ...
+}
+```
+
+**Location:** `src/session-manager.ts:154`
+
+## Audit and Telemetry
+
+### Crash-Safe Logging
+
+Shannon maintains comprehensive audit trails in `audit-logs/{hostname}_{sessionId}/`:
+
+```
+audit-logs/example-com_shannon-1234567890/
+├── session.json          # Metrics and session metadata
+├── workflow.log          # Human-readable unified log
+├── agents/               # Per-agent execution logs (JSON)
+│   ├── pre-recon_1.json
+│   ├── recon_1.json
+│   └── ...
+├── prompts/              # Prompt snapshots for reproducibility
+│   ├── pre-recon.txt
+│   └── ...
+└── deliverables/         # Final security reports
+    └── comprehensive_security_assessment_report.md
+```
+
+**Key components:**
+- `AuditSession` (`src/audit/audit-session.ts:8`) — Facade coordinating logger, metrics, and concurrency
+- `WorkflowLogger` (`src/audit/workflow-logger.ts`) — Unified human-readable logs
+- `MetricsTracker` (`src/audit/metrics-tracker.ts`) — Cost and performance tracking
+- `SessionMutex` (`src/utils/concurrency.ts`) — Race-safe file writes
+
+### Session Metadata
+
+Every workflow tracks:
+
+```json
+{
+  "session": {
+    "id": "example-com_shannon-1234567890",
+    "webUrl": "https://example.com",
+    "status": "in-progress",
+    "createdAt": "2025-03-03T10:00:00.000Z",
+    "completedAt": null,
+    "originalWorkflowId": "shannon-1234567890",
+    "checkpointHash": "abc123..."
+  },
+  "metrics": {
+    "total_cost_usd": 12.34,
+    "agents": {
+      "pre-recon": {
+        "status": "completed",
+        "attempts": 1,
+        "cost_usd": 2.50,
+        "duration_ms": 120000
+      }
+    }
+  }
+}
+```
+
+## Configuration System
+
+### YAML Configuration
+
+Optional YAML configs in `configs/` enable:
+- Authentication settings (form, SSO, API, basic auth)
+- MFA/TOTP secrets for 2FA
+- Custom testing rules (focus/avoid patterns)
+- Retry presets for subscription plans
+
+**Schema validation:** `config-schema.json`
+
+**Example:**
+
+```yaml
+authentication:
+  login_type: form
+  login_url: "https://example.com/login"
+  credentials:
+    username: "test@example.com"
+    password: "password123"
+    totp_secret: "LB2E2RX7XFHSTGCK"
+  
+  login_flow:
+    - "Type $username into the email field"
+    - "Type $password into the password field"
+    - "Click the 'Sign In' button"
+  
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+
+pipeline:
+  retry_preset: subscription
+  max_concurrent_pipelines: 2
+```
+
+### Prompt Templates
+
+Per-phase templates in `prompts/` with variable substitution:
+
+```
+{{TARGET_URL}}
+{{CONFIG_CONTEXT}}
+{{LOGIN_INSTRUCTIONS}}
+```
+
+Shared partials in `prompts/shared/` are included via `src/services/prompt-manager.ts`.
+
+## Error Handling
+
+### Classification System
+
+Errors are classified for intelligent retry via `src/services/error-handling.ts`:
+
+```typescript
+enum ErrorCode {
+  // Non-retryable
+  AUTHENTICATION_ERROR,
+  PERMISSION_ERROR,
+  INVALID_REQUEST_ERROR,
+  CONFIG_VALIDATION_FAILED,
+  
+  // Retryable
+  BILLING_ERROR,
+  RATE_LIMIT_ERROR,
+  NETWORK_ERROR,
+  TRANSIENT_ERROR,
+}
+```
+
+### Retry Strategy
+
+<Tabs>
+  <Tab title="Production">
+    **Default for most users:**
+    - Initial interval: 5 minutes
+    - Maximum interval: 30 minutes
+    - Backoff coefficient: 2x
+    - Maximum attempts: 50
+  </Tab>
+  
+  <Tab title="Subscription Plans">
+    **For 5-hour rolling rate limit windows:**
+    ```yaml
+    pipeline:
+      retry_preset: subscription
+    ```
+    - Maximum interval: 6 hours
+    - Maximum attempts: 100
+  </Tab>
+  
+  <Tab title="Testing">
+    **Fast iteration with `PIPELINE_TESTING=true`:**
+    - Initial interval: 10 seconds
+    - Maximum interval: 30 seconds
+    - Maximum attempts: 5
+  </Tab>
+</Tabs>
+
+## Dependency Injection
+
+Per-workflow DI container at `src/services/container.ts`:
+
+```typescript
+interface Container {
+  agentExecution: AgentExecutionService;
+  errorHandling: ErrorHandlingService;
+  configLoader: ConfigLoader;
+  gitManager: GitManager;
+  // ... more services
+}
+
+// AuditSession excluded (parallel safety)
+```
+
+<Warning>
+  `AuditSession` is NOT in the container because it uses instance state (`currentAgentName`) that cannot be shared across parallel agents. Each agent creates its own `AuditSession` instance.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Pipeline Phases" icon="arrow-progress" href="/concepts/pipeline-phases">
+    Learn about the 5-phase execution model
+  </Card>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Explore the 13 specialized security agents
+  </Card>
+  <Card title="Workspaces" icon="folder-tree" href="/concepts/workspaces">
+    Understand resume functionality and checkpointing
+  </Card>
+  <Card title="Adding Agents" icon="plus" href="/guides/custom-agents">
+    Extend Shannon with custom vulnerability types
+  </Card>
+</CardGroup>

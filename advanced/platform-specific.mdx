@@ -1,0 +1,190 @@
+---
+title: 'Platform-Specific Instructions'
+description: 'Setup and configuration for Windows, Linux, and macOS'
+---
+
+Shannon is designed to work across multiple platforms. This guide covers platform-specific setup instructions and considerations.
+
+## Windows
+
+Windows users have two options for running Shannon: native Git Bash or WSL2 (recommended).
+
+### Option 1: Native (Git Bash)
+
+<Steps>
+<Step title="Install Git for Windows">
+  Download and install [Git for Windows](https://git-scm.com/install/windows).
+</Step>
+
+<Step title="Install Docker Desktop">
+  Download and install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/).
+</Step>
+
+<Step title="Run from Git Bash">
+  Open Git Bash and navigate to the Shannon directory:
+
+  ```bash
+  cd /path/to/shannon
+  ./shannon start URL=https://example.com REPO=repo-name
+  ```
+</Step>
+</Steps>
+
+### Option 2: WSL2 (Recommended)
+
+WSL2 provides better performance and compatibility for Shannon.
+
+<Steps>
+<Step title="Ensure WSL 2 is installed">
+  Open PowerShell as Administrator and run:
+
+  ```powershell
+  wsl --install
+  wsl --set-default-version 2
+  ```
+
+  Check installed distributions:
+
+  ```powershell
+  wsl --list --verbose
+  ```
+</Step>
+
+<Step title="Install a Linux distribution">
+  If you don't have a distribution installed, install Ubuntu 24.04 (recommended):
+
+  ```powershell
+  wsl --list --online
+  wsl --install Ubuntu-24.04
+  ```
+
+  If your existing distribution shows VERSION 1, convert it to WSL 2:
+
+  ```powershell
+  wsl --set-version <distro-name> 2
+  ```
+
+  See [WSL basic commands](https://learn.microsoft.com/en-us/windows/wsl/basic-commands) for reference.
+</Step>
+
+<Step title="Install Docker Desktop">
+  Install Docker Desktop on Windows and enable the WSL2 backend:
+  
+  1. Go to **Settings** > **General**
+  2. Enable **Use the WSL 2 based engine**
+</Step>
+
+<Step title="Run Shannon inside WSL">
+  Open a WSL terminal by typing `wsl -d <distro-name>` in PowerShell or CMD:
+
+  ```bash
+  # Inside WSL terminal
+  git clone https://github.com/KeygraphHQ/shannon.git
+  cd shannon
+  cp .env.example .env  # Edit with your API key
+  ./shannon start URL=https://your-app.com REPO=your-repo
+  ```
+</Step>
+
+<Step title="Access Temporal Web UI">
+  To access the Temporal Web UI from Windows:
+
+  1. Run `ip addr` inside WSL to find your WSL IP address
+  2. Navigate to `http://<wsl-ip>:8233` in your Windows browser
+</Step>
+</Steps>
+
+### Windows Antivirus False Positives
+
+<Warning>
+Windows Defender may flag files in `xben-benchmark-results/` or `deliverables/` as malware. These are **false positives** caused by exploit code in the reports.
+</Warning>
+
+**Solution**: Add an exclusion for the Shannon directory in Windows Defender:
+
+1. Open **Windows Security**
+2. Go to **Virus & threat protection** > **Manage settings**
+3. Under **Exclusions**, click **Add or remove exclusions**
+4. Add the Shannon directory as an exclusion
+
+Alternatively, run Shannon inside Docker/WSL2 to isolate the files from Windows Defender.
+
+## Linux
+
+Shannon works natively on Linux with Docker installed.
+
+<Steps>
+<Step title="Install Docker">
+  Follow the [Docker installation guide](https://docs.docker.com/engine/install/) for your Linux distribution.
+</Step>
+
+<Step title="Configure Docker permissions (optional)">
+  You may need to run commands with `sudo` depending on your Docker setup. To avoid using `sudo`, add your user to the `docker` group:
+
+  ```bash
+  sudo usermod -aG docker $USER
+  ```
+
+  Log out and back in for the changes to take effect.
+</Step>
+
+<Step title="Run Shannon">
+  ```bash
+  git clone https://github.com/KeygraphHQ/shannon.git
+  cd shannon
+  cp .env.example .env  # Edit with your API key
+  ./shannon start URL=https://example.com REPO=repo-name
+  ```
+</Step>
+</Steps>
+
+<Note>
+If you encounter permission issues with output files, ensure your user has access to the Docker socket and the necessary file permissions.
+</Note>
+
+## macOS
+
+macOS works out of the box with Docker Desktop installed.
+
+<Steps>
+<Step title="Install Docker Desktop">
+  Download and install [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/).
+</Step>
+
+<Step title="Run Shannon">
+  ```bash
+  git clone https://github.com/KeygraphHQ/shannon.git
+  cd shannon
+  cp .env.example .env  # Edit with your API key
+  ./shannon start URL=https://example.com REPO=repo-name
+  ```
+</Step>
+</Steps>
+
+## Testing Local Applications
+
+When testing applications running on your local machine, Docker containers cannot reach `localhost` directly.
+
+<Note>
+**Solution**: Use `host.docker.internal` in place of `localhost` in your URLs.
+</Note>
+
+### Example
+
+If your application runs on `http://localhost:3000`, use:
+
+```bash
+./shannon start URL=http://host.docker.internal:3000 REPO=repo-name
+```
+
+This applies to all platforms (Windows, Linux, macOS) when using Docker.
+
+## Platform Summary
+
+| Platform | Recommended Setup | Docker Access |
+|----------|------------------|---------------|
+| **Windows** | WSL2 + Docker Desktop | Native in WSL2 |
+| **Linux** | Native Docker | Native or sudo |
+| **macOS** | Docker Desktop | Native |
+
+All platforms support the `host.docker.internal` hostname for accessing local applications.

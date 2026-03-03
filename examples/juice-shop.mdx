@@ -1,0 +1,254 @@
+---
+title: OWASP Juice Shop report
+description: Complete security assessment of OWASP Juice Shop with 20+ critical vulnerabilities
+---
+
+Shannon successfully identified **over 20 high-impact vulnerabilities** across targeted OWASP categories in a single automated run against [OWASP Juice Shop](https://github.com/juice-shop/juice-shop), a notoriously insecure web application maintained by OWASP.
+
+<Note>
+  The full report is available in the Shannon repository at `sample-reports/shannon-report-juice-shop.md`
+</Note>
+
+## Executive summary
+
+- **Target:** OWASP Juice Shop
+- **Assessment Date:** September 2025
+- **Scope:** Authentication, XSS, SQL and Command Injection, SSRF, Authorization testing
+- **Total vulnerabilities:** 20+ critical and high-severity findings
+
+## Key accomplishments
+
+<CardGroup cols={2}>
+  <Card title="Complete authentication bypass" icon="unlock">
+    SQL injection enabling admin access without credentials
+  </Card>
+  <Card title="Database exfiltration" icon="database">
+    UNION-based SQL injection extracting entire user database including password hashes
+  </Card>
+  <Card title="Privilege escalation" icon="user-shield">
+    Created new administrator account through registration workflow bypass
+  </Card>
+  <Card title="Authorization bypass (IDOR)" icon="key">
+    Accessed and modified any user's private data and shopping cart
+  </Card>
+  <Card title="SSRF exploitation" icon="network-wired">
+    Internal network reconnaissance via profile image URL vulnerability
+  </Card>
+  <Card title="Multiple XSS vectors" icon="code">
+    Reflected XSS via Angular bypass and JSONP callback exploitation
+  </Card>
+</CardGroup>
+
+## Vulnerability breakdown
+
+### Authentication vulnerabilities (Critical)
+
+<Accordion title="SQL injection authentication bypass">
+  **Location:** `POST /rest/user/login` (email field)  
+  **Severity:** Critical  
+  **Impact:** Complete admin access bypass
+
+  **Exploit:**
+  ```bash
+  curl -X POST http://juice-shop.local:3001/rest/user/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"'\''\'' OR '\''\'1'\''\''='\''\'1'\''\'' --","password":"test"}'
+  ```
+
+  **Proof of impact:**  
+  Successfully obtained admin JWT token for user ID 1 (`admin@juice-sh.op`) with role "admin".
+
+  **Code reference:** `/routes/login.ts:34` - Direct string interpolation in SQL query
+</Accordion>
+
+<Accordion title="Brute force attacks (no rate limiting)">
+  **Location:** `POST /rest/user/login`  
+  **Severity:** High  
+  **Impact:** Account compromise via brute force
+
+  Missing rate limiting allows unlimited authentication attempts, enabling credential stuffing and password brute force attacks.
+</Accordion>
+
+<Accordion title="MD5 password cracking">
+  **Location:** User password storage  
+  **Severity:** High  
+  **Impact:** Rapid password recovery from database dumps
+
+  Weak MD5 hashing with no salt enables instant password recovery. Admin password hash cracked in seconds using online rainbow tables.
+</Accordion>
+
+### Authorization vulnerabilities (Critical)
+
+<Accordion title="Admin role injection during registration">
+  **Location:** `POST /api/Users/` (registration endpoint)  
+  **Severity:** Critical  
+  **Impact:** Instant admin privilege escalation
+
+  **Exploit:**
+  ```bash
+  curl -X POST http://juice-shop.local:3001/api/Users/ \
+    -H "Content-Type: application/json" \
+    -d '{"email":"hacker@evil.com","password":"Password123","role":"admin"}'
+  ```
+
+  Successfully created a new admin account through mass assignment vulnerability.
+</Accordion>
+
+<Accordion title="IDOR - User profile access">
+  **Location:** `GET /rest/user/{id}`  
+  **Severity:** High  
+  **Impact:** Horizontal privilege escalation to any user account
+
+  No authorization check on user ID parameter allows accessing any user's profile, including email, address, and payment information.
+</Accordion>
+
+<Accordion title="IDOR - Basket manipulation">
+  **Location:** `GET/POST /rest/basket/{id}`  
+  **Severity:** High  
+  **Impact:** Access and modify any user's shopping cart
+
+  Predictable basket IDs with no ownership validation enable viewing and modifying other users' carts.
+</Accordion>
+
+### SQL injection vulnerabilities (Critical)
+
+<Accordion title="UNION-based database extraction">
+  **Location:** `GET /rest/products/search` (q parameter)  
+  **Severity:** Critical  
+  **Impact:** Complete database compromise
+
+  **Exploit:**
+  ```bash
+  curl -s "http://juice-shop.local:3001/rest/products/search?q=xxx%25%27%29%20AND%20description%20LIKE%20%27%25xxx%25%27%29%20UNION%20SELECT%20id,email,password,role,0,0,0,0,0%20FROM%20Users%20LIMIT%205--"
+  ```
+
+  Successfully extracted:
+  - All user emails and password hashes
+  - User roles (admin, customer)
+  - Complete database schema
+
+  **Code reference:** `/routes/search.ts:18` - Unsanitized query parameter
+</Accordion>
+
+<Accordion title="NoSQL operator injection">
+  **Location:** Login and search endpoints  
+  **Severity:** High  
+  **Impact:** Authentication bypass and mass data manipulation
+
+  MongoDB operator injection (`$ne`, `$gt`) enables bypassing authentication and bulk data modification.
+</Accordion>
+
+### XSS vulnerabilities (High)
+
+<Accordion title="Reflected XSS via Angular bypass">
+  **Location:** Search functionality  
+  **Severity:** High  
+  **Impact:** Session hijacking, credential theft
+
+  **Exploit:**
+  ```html
+  <iframe src="javascript:alert('XSS')">
+  ```
+
+  Successfully bypassed Angular's sanitization using iframe-based payload.
+</Accordion>
+
+<Accordion title="JSONP callback XSS">
+  **Location:** JSONP endpoints  
+  **Severity:** High  
+  **Impact:** Cross-domain data exfiltration
+
+  Unvalidated JSONP callback parameter allows arbitrary JavaScript execution for cross-domain attacks.
+</Accordion>
+
+### SSRF vulnerabilities (High)
+
+<Accordion title="Profile image URL SSRF">
+  **Location:** `POST /profile/image/url`  
+  **Severity:** High  
+  **Impact:** Internal network reconnaissance, cloud metadata access
+
+  **Exploit:**
+  ```bash
+  curl -X POST http://juice-shop.local:3001/profile/image/url \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{"imageUrl":"http://169.254.169.254/latest/meta-data/"}'
+  ```
+
+  Successfully accessed:
+  - Internal services (Solr, Redis)
+  - Cloud metadata endpoints
+  - File system via file:// protocol
+</Accordion>
+
+## Additional findings
+
+<AccordionGroup>
+  <Accordion title="XXE file disclosure">
+    **Location:** XML upload endpoints  
+    **Severity:** High  
+    **Impact:** Local file read access
+
+    External entity injection in XML parser enables reading arbitrary files from the server file system.
+  </Accordion>
+
+  <Accordion title="YAML injection DoS">
+    **Location:** Configuration upload  
+    **Severity:** Medium  
+    **Impact:** Denial of service
+
+    Unsafe YAML deserialization allows resource exhaustion attacks.
+  </Accordion>
+
+  <Accordion title="Business logic bypass">
+    **Location:** Deluxe membership, checkout flow  
+    **Severity:** High  
+    **Impact:** Payment bypass, order manipulation
+
+    Multiple business logic flaws enable:
+    - Free deluxe membership activation
+    - Checking out other users' carts
+    - Negative pricing via coupon stacking
+  </Accordion>
+</AccordionGroup>
+
+## Impact summary
+
+<Warning>
+  **Combined impact:** These vulnerabilities provide complete application compromise:
+  
+  1. **Full authentication bypass** via SQL injection
+  2. **Complete database access** with user credentials and payment data
+  3. **Privilege escalation** to admin via registration bypass
+  4. **Horizontal access** to all user accounts via IDOR
+  5. **Internal network access** via SSRF
+  6. **Session hijacking** via XSS
+</Warning>
+
+## Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total vulnerabilities | 20+ |
+| Critical severity | 8 |
+| High severity | 12+ |
+| Runtime | 1.5 hours |
+| API cost | ~$50 USD |
+| False positives | 0 |
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Full report" icon="file-pdf" href="https://github.com/KeygraphHQ/shannon/blob/main/sample-reports/shannon-report-juice-shop.md">
+    View complete report in GitHub
+  </Card>
+  <Card title="OWASP Juice Shop" icon="github" href="https://github.com/juice-shop/juice-shop">
+    Official Juice Shop repository
+  </Card>
+  <Card title="Run your own test" icon="rocket" href="/quickstart">
+    Test Shannon against Juice Shop
+  </Card>
+  <Card title="Benchmark results" icon="trophy" href="/coverage/benchmark-results">
+    96.15% success rate on XBOW
+  </Card>
+</CardGroup>

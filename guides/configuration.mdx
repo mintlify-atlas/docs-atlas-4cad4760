@@ -1,0 +1,342 @@
+---
+title: Configuration
+description: Complete guide to Shannon's YAML configuration system
+---
+
+Shannon uses YAML configuration files to customize penetration testing behavior, authentication settings, and pipeline execution. Configuration files are placed in the `./configs/` directory.
+
+## Quick Start
+
+Copy the example configuration and modify it for your application:
+
+```bash
+cp configs/example-config.yaml configs/my-app-config.yaml
+```
+
+Run Shannon with your configuration:
+
+```bash
+./shannon start URL=https://example.com REPO=repo-name CONFIG=./configs/my-app-config.yaml
+```
+
+## Configuration File Structure
+
+Configuration files support three main sections:
+
+<CodeGroup>
+```yaml Basic Structure
+authentication:
+  # Login and credential settings
+  login_type: form
+  login_url: "https://example.com/login"
+  credentials:
+    username: "test@example.com"
+    password: "yourpassword"
+  login_flow:
+    - "Type $username into the email field"
+    - "Click the 'Sign In' button"
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+
+rules:
+  # Testing behavior customization
+  avoid:
+    - description: "Skip logout functionality"
+      type: path
+      url_path: "/logout"
+  focus:
+    - description: "Prioritize API endpoints"
+      type: path
+      url_path: "/api"
+
+pipeline:
+  # Execution settings for rate limits
+  retry_preset: subscription
+  max_concurrent_pipelines: 2
+```
+
+```yaml Complete Example
+authentication:
+  login_type: form
+  login_url: "https://example.com/login"
+  credentials:
+    username: "testuser"
+    password: "testpassword"
+    totp_secret: "JBSWY3DPEHPK3PXP"  # Optional for 2FA
+  
+  login_flow:
+    - "Type $username into the email field"
+    - "Type $password into the password field"
+    - "Click the 'Sign In' button"
+    - "Enter $totp in the verification code field"
+    - "Click 'Verify'"
+  
+  success_condition:
+    type: url_contains
+    value: "/dashboard"
+
+rules:
+  avoid:
+    - description: "Do not test the marketing site subdomain"
+      type: subdomain
+      url_path: "www"
+    
+    - description: "Skip logout functionality"
+      type: path
+      url_path: "/logout"
+    
+    - description: "No DELETE operations on user API"
+      type: path
+      url_path: "/api/v1/users/*"
+  
+  focus:
+    - description: "Prioritize beta admin panel subdomain"
+      type: subdomain
+      url_path: "beta-admin"
+
+    - description: "Focus on user profile updates"
+      type: path
+      url_path: "/api/v2/user-profile"
+
+pipeline:
+  retry_preset: subscription
+  max_concurrent_pipelines: 2
+```
+</CodeGroup>
+
+## Authentication Section
+
+Configure how Shannon authenticates to your application. See the [Authentication Guide](/guides/authentication) for detailed examples.
+
+<ParamField path="authentication.login_type" type="string" required>
+  Type of authentication mechanism
+  
+  **Options:**
+  - `form` - Standard login form
+  - `sso` - Single sign-on (Google, OAuth)
+  - `api` - API token authentication
+  - `basic` - HTTP Basic Auth
+</ParamField>
+
+<ParamField path="authentication.login_url" type="string" required>
+  URL for the login page or endpoint
+  
+  ```yaml
+  login_url: "https://example.com/login"
+  ```
+</ParamField>
+
+<ParamField path="authentication.credentials" type="object" required>
+  Login credentials for the test account
+  
+  <Expandable title="credentials properties">
+    <ParamField path="username" type="string" required>
+      Username or email (1-255 characters)
+    </ParamField>
+    
+    <ParamField path="password" type="string" required>
+      Password (1-255 characters)
+    </ParamField>
+    
+    <ParamField path="totp_secret" type="string">
+      TOTP secret for two-factor authentication (Base32 encoded). See [2FA Setup](/guides/authentication).
+      
+      ```yaml
+      totp_secret: "JBSWY3DPEHPK3PXP"
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="authentication.login_flow" type="array" required>
+  Step-by-step natural language instructions for login (1-20 steps)
+  
+  Use `$username`, `$password`, and `$totp` variables:
+  
+  ```yaml
+  login_flow:
+    - "Type $username into the email field"
+    - "Type $password into the password field"
+    - "Click the 'Sign In' button"
+  ```
+</ParamField>
+
+<ParamField path="authentication.success_condition" type="object" required>
+  Condition that indicates successful authentication
+  
+  <Expandable title="success_condition properties">
+    <ParamField path="type" type="string" required>
+      Type of success condition
+      
+      **Options:**
+      - `url_contains` - Check if URL contains a substring
+      - `url_equals_exactly` - Check for exact URL match
+      - `element_present` - Check for DOM element presence
+      - `text_contains` - Check for text on page
+    </ParamField>
+    
+    <ParamField path="value" type="string" required>
+      Value to match against the condition (1-500 characters)
+      
+      ```yaml
+      success_condition:
+        type: url_contains
+        value: "/dashboard"
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Rules Section
+
+Define testing behavior with `avoid` and `focus` rules to control where Shannon tests.
+
+<ParamField path="rules.avoid" type="array">
+  Areas to skip during testing (max 50 rules)
+  
+  ```yaml
+  avoid:
+    - description: "Skip logout functionality"
+      type: path
+      url_path: "/logout"
+    
+    - description: "No DELETE operations on user API"
+      type: path
+      url_path: "/api/v1/users/*"
+  ```
+</ParamField>
+
+<ParamField path="rules.focus" type="array">
+  Areas to prioritize during testing (max 50 rules)
+  
+  ```yaml
+  focus:
+    - description: "Prioritize API endpoints"
+      type: path
+      url_path: "/api"
+    
+    - description: "Focus on beta admin panel"
+      type: subdomain
+      url_path: "beta-admin"
+  ```
+</ParamField>
+
+### Rule Properties
+
+Each rule in `avoid` or `focus` arrays has these properties:
+
+<ParamField path="description" type="string" required>
+  Human-readable description (1-200 characters)
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Rule matching type
+  
+  **Options:**
+  - `path` - Match URL path patterns
+  - `subdomain` - Match subdomains
+  - `domain` - Match domains
+  - `method` - Match HTTP methods
+  - `header` - Match HTTP headers
+  - `parameter` - Match query/body parameters
+</ParamField>
+
+<ParamField path="url_path" type="string" required>
+  Pattern or value to match (1-1000 characters)
+  
+  Supports wildcards with `*`:
+  ```yaml
+  url_path: "/api/v1/users/*"
+  ```
+</ParamField>
+
+## Pipeline Section
+
+Control retry behavior and concurrency for rate limit management.
+
+<ParamField path="pipeline.retry_preset" type="string">
+  Retry strategy preset
+  
+  **Options:**
+  - `default` - Standard retry (30min max backoff)
+  - `subscription` - Extended retry for Anthropic subscription plans (6h max backoff, 100 retries)
+  
+  ```yaml
+  pipeline:
+    retry_preset: subscription
+  ```
+</ParamField>
+
+<ParamField path="pipeline.max_concurrent_pipelines" type="string">
+  Number of vulnerability pipelines to run simultaneously (1-5, default: 5)
+  
+  Lower values reduce API usage spikes but increase total runtime:
+  
+  ```yaml
+  pipeline:
+    max_concurrent_pipelines: 2
+  ```
+</ParamField>
+
+<Note>
+**Subscription Plan Rate Limits**
+
+Anthropic subscription plans reset usage on a **rolling 5-hour window**. If you hit rate limits, use:
+
+```yaml
+pipeline:
+  retry_preset: subscription          # Extends max backoff to 6h
+  max_concurrent_pipelines: 2         # Reduces burst API usage
+```
+
+This configuration allows Shannon to wait for the rate limit window to reset automatically.
+</Note>
+
+## Schema Validation
+
+All configuration files are validated against the JSON schema at `configs/config-schema.json`. Invalid configurations will fail with detailed error messages during startup.
+
+### Common Validation Errors
+
+<Accordion title="Missing required fields">
+```
+ERROR: Configuration validation failed
+- authentication.credentials is required
+```
+
+Ensure all required fields are present in your configuration.
+</Accordion>
+
+<Accordion title="Invalid enum values">
+```
+ERROR: authentication.login_type must be one of: form, sso, api, basic
+```
+
+Check that enum values match exactly (case-sensitive).
+</Accordion>
+
+<Accordion title="String length violations">
+```
+ERROR: authentication.credentials.username must be 1-255 characters
+```
+
+Verify that all string fields meet length requirements.
+</Accordion>
+
+## Environment Variables
+
+Some settings are configured via environment variables in `.env` rather than YAML. See:
+- [Cloud Providers Guide](/guides/cloud-providers) for AWS Bedrock and Google Vertex AI
+- [Authentication Guide](/guides/authentication) for API keys and tokens
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Setup login flows and 2FA
+  </Card>
+  <Card title="Cloud Providers" icon="cloud" href="/guides/cloud-providers">
+    AWS Bedrock and Google Vertex AI
+  </Card>
+</CardGroup>

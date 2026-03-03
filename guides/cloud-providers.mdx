@@ -1,0 +1,540 @@
+---
+title: Cloud Providers
+description: Configure AWS Bedrock, Google Vertex AI, and experimental Router mode
+---
+
+Shannon supports multiple AI providers beyond direct Anthropic API access. Route requests through AWS Bedrock, Google Vertex AI, or experimental multi-model providers.
+
+## Provider Options
+
+<CardGroup cols={2}>
+  <Card title="Anthropic API" icon="brain">
+    Direct API access (default, recommended)
+  </Card>
+  <Card title="AWS Bedrock" icon="aws">
+    Route through Amazon Bedrock
+  </Card>
+  <Card title="Google Vertex AI" icon="google">
+    Route through Google Cloud Vertex AI
+  </Card>
+  <Card title="Router Mode" icon="route">
+    Experimental multi-model support
+  </Card>
+</CardGroup>
+
+## Anthropic API (Default)
+
+Direct API access is the simplest and recommended approach.
+
+### Setup
+
+<Steps>
+  <Step title="Get API Key">
+    Sign up at [Anthropic Console](https://console.anthropic.com) and create an API key.
+  </Step>
+  
+  <Step title="Configure .env">
+    ```bash .env
+    ANTHROPIC_API_KEY=your-api-key-here
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+    ```
+  </Step>
+  
+  <Step title="Run Shannon">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+  </Step>
+</Steps>
+
+### OAuth Token Alternative
+
+Use Claude Code OAuth token instead of API key:
+
+```bash .env
+CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here
+CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+```
+
+## AWS Bedrock
+
+Route requests through Amazon Bedrock instead of direct Anthropic API.
+
+### Prerequisites
+
+- AWS account with Bedrock access
+- Claude models enabled in your AWS region
+- Bedrock API keys (Bearer token)
+
+### Setup
+
+<Steps>
+  <Step title="Generate Bedrock API Key">
+    Follow [AWS Bedrock API Keys guide](https://aws.amazon.com/blogs/machine-learning/accelerate-ai-development-with-amazon-bedrock-api-keys/) to generate a bearer token.
+  </Step>
+  
+  <Step title="Configure .env">
+    ```bash .env
+    CLAUDE_CODE_USE_BEDROCK=1
+    AWS_REGION=us-east-1
+    AWS_BEARER_TOKEN_BEDROCK=your-bearer-token
+    
+    # Set models with Bedrock-specific IDs for your region
+    ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+    ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+    ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+    ```
+  </Step>
+  
+  <Step title="Run Shannon">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+    
+    Shannon automatically uses Bedrock for all requests.
+  </Step>
+</Steps>
+
+### Model Tiers
+
+Shannon uses three model tiers with different Bedrock IDs per region:
+
+<Tabs>
+  <Tab title="Small Tier">
+    Used for summarization and light analysis.
+    
+    ```bash
+    ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+    ```
+    
+    Default: `claude-haiku-4-5-20251001`
+  </Tab>
+  
+  <Tab title="Medium Tier">
+    Used for security analysis and vulnerability hunting.
+    
+    ```bash
+    ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+    ```
+    
+    Default: `claude-sonnet-4-6`
+  </Tab>
+  
+  <Tab title="Large Tier">
+    Used for deep reasoning and exploitation.
+    
+    ```bash
+    ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+    ```
+    
+    Default: `claude-opus-4-6`
+  </Tab>
+</Tabs>
+
+### Regional Model IDs
+
+Bedrock model IDs vary by AWS region. Common formats:
+
+<CodeGroup>
+```bash us-east-1
+ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+```
+
+```bash us-west-2
+ANTHROPIC_SMALL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+ANTHROPIC_MEDIUM_MODEL=us.anthropic.claude-sonnet-4-6
+ANTHROPIC_LARGE_MODEL=us.anthropic.claude-opus-4-6
+```
+</CodeGroup>
+
+<Note>
+**Regional Availability**
+
+Not all Claude models are available in all AWS regions. Check the [AWS Bedrock Model Catalog](https://aws.amazon.com/bedrock/models/) for your region's supported models.
+</Note>
+
+### Configuration Reference
+
+<ParamField path="CLAUDE_CODE_USE_BEDROCK" type="string">
+  Enable Bedrock mode (set to `1`)
+</ParamField>
+
+<ParamField path="AWS_REGION" type="string" required>
+  AWS region for Bedrock (e.g., `us-east-1`, `us-west-2`)
+</ParamField>
+
+<ParamField path="AWS_BEARER_TOKEN_BEDROCK" type="string" required>
+  Bedrock API bearer token
+</ParamField>
+
+<ParamField path="ANTHROPIC_SMALL_MODEL" type="string" required>
+  Bedrock model ID for small tier
+</ParamField>
+
+<ParamField path="ANTHROPIC_MEDIUM_MODEL" type="string" required>
+  Bedrock model ID for medium tier
+</ParamField>
+
+<ParamField path="ANTHROPIC_LARGE_MODEL" type="string" required>
+  Bedrock model ID for large tier
+</ParamField>
+
+## Google Vertex AI
+
+Route requests through Google Cloud Vertex AI.
+
+### Prerequisites
+
+- Google Cloud Platform project
+- Vertex AI API enabled
+- Service account with `roles/aiplatform.user` role
+
+### Setup
+
+<Steps>
+  <Step title="Create Service Account">
+    In the [GCP Console](https://console.cloud.google.com/iam-admin/serviceaccounts):
+    
+    1. Create a new service account
+    2. Grant `roles/aiplatform.user` role
+    3. Create and download a JSON key file
+  </Step>
+  
+  <Step title="Place Key File">
+    ```bash
+    mkdir -p ./credentials
+    cp /path/to/your-sa-key.json ./credentials/gcp-sa-key.json
+    ```
+    
+    The `./credentials/` directory is mounted into the Docker container.
+  </Step>
+  
+  <Step title="Configure .env">
+    ```bash .env
+    CLAUDE_CODE_USE_VERTEX=1
+    CLOUD_ML_REGION=us-east5
+    ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project-id
+    GOOGLE_APPLICATION_CREDENTIALS=./credentials/gcp-sa-key.json
+    
+    # Set models with Vertex AI model IDs
+    ANTHROPIC_SMALL_MODEL=claude-haiku-4-5@20251001
+    ANTHROPIC_MEDIUM_MODEL=claude-sonnet-4-6
+    ANTHROPIC_LARGE_MODEL=claude-opus-4-6
+    ```
+  </Step>
+  
+  <Step title="Run Shannon">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name
+    ```
+  </Step>
+</Steps>
+
+### Regional Endpoints
+
+Vertex AI supports global and regional endpoints:
+
+<Tabs>
+  <Tab title="Global Endpoint">
+    ```bash
+    CLOUD_ML_REGION=global
+    ```
+    
+    <Warning>
+    Some models may not be available on global endpoints. Use regional endpoints for full model availability.
+    </Warning>
+  </Tab>
+  
+  <Tab title="Regional Endpoint">
+    ```bash
+    CLOUD_ML_REGION=us-east5
+    ```
+    
+    Recommended regions:
+    - `us-east5` (Virginia)
+    - `us-central1` (Iowa)
+    - `europe-west1` (Belgium)
+  </Tab>
+</Tabs>
+
+Check the [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) for region availability.
+
+### Model IDs
+
+Vertex AI uses different model ID formats than Anthropic or Bedrock:
+
+<CodeGroup>
+```bash Vertex AI Format
+ANTHROPIC_SMALL_MODEL=claude-haiku-4-5@20251001
+ANTHROPIC_MEDIUM_MODEL=claude-sonnet-4-6
+ANTHROPIC_LARGE_MODEL=claude-opus-4-6
+```
+
+```bash Anthropic Format (for comparison)
+ANTHROPIC_SMALL_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_MEDIUM_MODEL=claude-sonnet-4-6
+ANTHROPIC_LARGE_MODEL=claude-opus-4-6
+```
+</CodeGroup>
+
+### Configuration Reference
+
+<ParamField path="CLAUDE_CODE_USE_VERTEX" type="string">
+  Enable Vertex AI mode (set to `1`)
+</ParamField>
+
+<ParamField path="CLOUD_ML_REGION" type="string" required>
+  GCP region or `global` for global endpoint
+</ParamField>
+
+<ParamField path="ANTHROPIC_VERTEX_PROJECT_ID" type="string" required>
+  Your GCP project ID
+</ParamField>
+
+<ParamField path="GOOGLE_APPLICATION_CREDENTIALS" type="string" required>
+  Path to service account JSON key file (must be in `./credentials/`)
+</ParamField>
+
+<ParamField path="ANTHROPIC_SMALL_MODEL" type="string" required>
+  Vertex AI model ID for small tier
+</ParamField>
+
+<ParamField path="ANTHROPIC_MEDIUM_MODEL" type="string" required>
+  Vertex AI model ID for medium tier
+</ParamField>
+
+<ParamField path="ANTHROPIC_LARGE_MODEL" type="string" required>
+  Vertex AI model ID for large tier
+</ParamField>
+
+## Router Mode (Experimental)
+
+<Warning>
+**Experimental Feature**
+
+Router mode is **experimental and unsupported**. It's intended for model experimentation only. Output quality varies significantly by model and may fail early phases.
+
+Shannon is optimized for Anthropic Claude models. Alternative providers may produce inconsistent results.
+</Warning>
+
+### Overview
+
+Router mode uses [claude-code-router](https://github.com/musistudio/claude-code-router) to route requests through alternative AI providers:
+
+- **OpenAI**: GPT-5.2, GPT-5-mini
+- **OpenRouter**: Google Gemini 3 Flash Preview
+
+### Setup
+
+<Steps>
+  <Step title="Configure Provider">
+    Add your provider API key to `.env`:
+    
+    <Tabs>
+      <Tab title="OpenAI">
+        ```bash .env
+        OPENAI_API_KEY=sk-...
+        ROUTER_DEFAULT=openai,gpt-5.2
+        ```
+      </Tab>
+      
+      <Tab title="OpenRouter">
+        ```bash .env
+        OPENROUTER_API_KEY=sk-or-...
+        ROUTER_DEFAULT=openrouter,google/gemini-3-flash-preview
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Run with ROUTER=true">
+    ```bash
+    ./shannon start URL=https://example.com REPO=repo-name ROUTER=true
+    ```
+    
+    The `ROUTER=true` flag starts the router container and routes all requests through it.
+  </Step>
+</Steps>
+
+### Available Models
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```bash
+    ROUTER_DEFAULT=openai,gpt-5.2
+    ```
+    
+    **Models:**
+    - `gpt-5.2`
+    - `gpt-5-mini`
+  </Tab>
+  
+  <Tab title="OpenRouter">
+    ```bash
+    ROUTER_DEFAULT=openrouter,google/gemini-3-flash-preview
+    ```
+    
+    **Models:**
+    - `google/gemini-3-flash-preview`
+  </Tab>
+</Tabs>
+
+### Router Configuration
+
+Router settings are defined in `configs/router-config.json`:
+
+```json configs/router-config.json
+{
+  "HOST": "0.0.0.0",
+  "APIKEY": "shannon-router-key",
+  "Providers": [
+    {
+      "name": "openai",
+      "api_base_url": "https://api.openai.com/v1/chat/completions",
+      "api_key": "$OPENAI_API_KEY",
+      "models": ["gpt-5.2", "gpt-5-mini"]
+    },
+    {
+      "name": "openrouter",
+      "api_base_url": "https://openrouter.ai/api/v1/chat/completions",
+      "api_key": "$OPENROUTER_API_KEY",
+      "models": ["google/gemini-3-flash-preview"]
+    }
+  ],
+  "Router": {
+    "default": "$ROUTER_DEFAULT"
+  }
+}
+```
+
+### Limitations
+
+<AccordionGroup>
+  <Accordion title="Inconsistent results">
+    Alternative models may:
+    - Fail reconnaissance phase
+    - Miss vulnerability patterns
+    - Generate invalid exploits
+    - Produce hallucinated findings
+  </Accordion>
+  
+  <Accordion title="No official support">
+    Router mode is provided as-is for experimentation. Issues specific to alternative models will not be addressed.
+  </Accordion>
+  
+  <Accordion title="Performance varies">
+    Model performance depends heavily on:
+    - Provider API reliability
+    - Model capabilities (reasoning, tool use)
+    - Request routing latency
+  </Accordion>
+</AccordionGroup>
+
+## Provider Comparison
+
+<ResponseField name="Anthropic API" type="Recommended">
+  **Pros:**
+  - Simplest setup
+  - Best performance
+  - Direct support
+  - No intermediary services
+  
+  **Cons:**
+  - Requires Anthropic account
+</ResponseField>
+
+<ResponseField name="AWS Bedrock">
+  **Pros:**
+  - Use existing AWS infrastructure
+  - Unified billing with AWS
+  - Enterprise compliance features
+  
+  **Cons:**
+  - More complex setup
+  - Regional model availability varies
+  - Requires AWS account and Bedrock access
+</ResponseField>
+
+<ResponseField name="Google Vertex AI">
+  **Pros:**
+  - Use existing GCP infrastructure
+  - Unified billing with GCP
+  - Service account security model
+  
+  **Cons:**
+  - More complex setup
+  - Regional model availability varies
+  - Requires GCP project
+</ResponseField>
+
+<ResponseField name="Router Mode" type="Experimental">
+  **Pros:**
+  - Experiment with alternative models
+  - Test GPT or Gemini performance
+  
+  **Cons:**
+  - Unsupported
+  - Inconsistent results
+  - May fail early phases
+  - Complex debugging
+</ResponseField>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Bedrock: Missing model tier variables">
+    **Error:**
+    ```
+    ERROR: Bedrock mode requires the following env vars in .env:
+    AWS_REGION ANTHROPIC_SMALL_MODEL ANTHROPIC_MEDIUM_MODEL ANTHROPIC_LARGE_MODEL
+    ```
+    
+    **Solution:** Set all three model tier variables with Bedrock-specific IDs for your region.
+  </Accordion>
+  
+  <Accordion title="Vertex AI: Service account key not found">
+    **Error:**
+    ```
+    ERROR: Service account key file not found: ./credentials/gcp-sa-key.json
+    ```
+    
+    **Solution:** Ensure the key file is placed in `./credentials/` directory (not elsewhere).
+  </Accordion>
+  
+  <Accordion title="Vertex AI: Permission denied">
+    **Error:**
+    ```
+    ERROR: Permission denied on Vertex AI API
+    ```
+    
+    **Solution:** Verify service account has `roles/aiplatform.user` role in GCP IAM.
+  </Accordion>
+  
+  <Accordion title="Router: No provider API key">
+    **Error:**
+    ```
+    WARNING: No provider API key set (OPENAI_API_KEY or OPENROUTER_API_KEY)
+    ```
+    
+    **Solution:** Set the appropriate provider API key in `.env` before running with `ROUTER=true`.
+  </Accordion>
+  
+  <Accordion title="Router: Failed early phases">
+    **Issue:** Reconnaissance or analysis phases fail with alternative models.
+    
+    **Solution:** Router mode is experimental. Switch back to Anthropic Claude models for reliable results.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Complete YAML configuration reference
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Setup login flows and 2FA
+  </Card>
+</CardGroup>

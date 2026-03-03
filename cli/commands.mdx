@@ -1,0 +1,450 @@
+---
+title: CLI Commands
+description: Complete reference for all Shannon CLI commands
+---
+
+The Shannon CLI provides commands for managing penetration testing workflows through a simple, intuitive interface.
+
+## start
+
+Start a new penetration testing workflow or resume an existing workspace.
+
+### Usage
+
+```bash
+./shannon start URL=<url> REPO=<name>
+```
+
+### Required Parameters
+
+<ParamField path="URL" type="string" required>
+  Target URL to test (e.g., `https://example.com`)
+</ParamField>
+
+<ParamField path="REPO" type="string" required>
+  Repository folder name under `./repos/` containing the target application source code
+  
+  **Important:** This must be a folder name (e.g., `my-repo`), not an absolute path. Clone or symlink your repository to `./repos/` first:
+  
+  ```bash
+  git clone https://github.com/org/repo.git ./repos/my-repo
+  # or symlink existing repo
+  ln -s /path/to/existing/repo ./repos/my-repo
+  ```
+</ParamField>
+
+### Optional Parameters
+
+<ParamField path="CONFIG" type="string">
+  Path to YAML configuration file with auth settings, MFA/TOTP, and testing parameters
+  
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo CONFIG=./configs/my-config.yaml
+  ```
+</ParamField>
+
+<ParamField path="OUTPUT" type="string" default="./audit-logs/">
+  Custom output directory for reports and logs
+  
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo OUTPUT=./my-reports
+  ```
+</ParamField>
+
+<ParamField path="WORKSPACE" type="string">
+  Named workspace identifier. Enables resuming previous runs or creating organized workspaces
+  
+  - **New workspace:** Creates a new workspace with the specified name
+  - **Resume:** If workspace exists, automatically resumes from last checkpoint
+  - **Auto-named:** Without this flag, workspaces are auto-named from URL + timestamp
+  
+  ```bash
+  # Create new named workspace
+  ./shannon start URL=https://example.com REPO=my-repo WORKSPACE=q1-audit
+  
+  # Resume existing workspace (same command)
+  ./shannon start URL=https://example.com REPO=my-repo WORKSPACE=q1-audit
+  ```
+</ParamField>
+
+<ParamField path="PIPELINE_TESTING" type="boolean" default="false">
+  Enable minimal prompts and fast retries for testing and development
+  
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo PIPELINE_TESTING=true
+  ```
+</ParamField>
+
+<ParamField path="ROUTER" type="boolean" default="false">
+  Enable multi-model routing through `claude-code-router` for alternative providers
+  
+  Supports OpenAI, OpenRouter, and other providers. Requires provider API keys in `.env`
+  
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo ROUTER=true
+  ```
+</ParamField>
+
+<ParamField path="REBUILD" type="boolean" default="false">
+  Force Docker rebuild with `--no-cache` flag
+  
+  Use when code changes aren't being picked up by the container
+  
+  ```bash
+  ./shannon start URL=https://example.com REPO=my-repo REBUILD=true
+  ```
+</ParamField>
+
+### Examples
+
+<Accordion title="Basic workflow">
+  ```bash
+  ./shannon start URL=https://example.com REPO=repo-name
+  ```
+  
+  **Output:**
+  ```
+  Starting Shannon containers...
+  Waiting for Temporal to be ready...
+  Temporal is ready!
+  
+  ✓ Workflow started: example.com_shannon-1234567890
+  Monitor at: http://localhost:8233
+  ```
+</Accordion>
+
+<Accordion title="Named workspace for organized testing">
+  ```bash
+  ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+  ```
+  
+  Creates a workspace named `q1-audit` that can be resumed later with the same command.
+</Accordion>
+
+<Accordion title="Custom configuration and output">
+  ```bash
+  ./shannon start URL=https://example.com REPO=repo-name CONFIG=./config.yaml OUTPUT=./reports
+  ```
+  
+  Uses custom YAML config and saves reports to `./reports/` instead of default `./audit-logs/`
+</Accordion>
+
+<Accordion title="Multi-model routing with OpenAI">
+  ```bash
+  ./shannon start URL=https://example.com REPO=repo-name ROUTER=true
+  ```
+  
+  **Output:**
+  ```
+  Starting claude-code-router...
+  Waiting for router to start...
+  Starting Shannon containers...
+  Temporal is ready!
+  
+  ✓ Workflow started with router mode enabled
+  ```
+</Accordion>
+
+### Error Handling
+
+<Accordion title="Missing required parameters">
+  ```bash
+  ./shannon start URL=https://example.com
+  ```
+  
+  **Error:**
+  ```
+  ERROR: URL and REPO are required
+  Usage: ./shannon start URL=<url> REPO=<name>
+  ```
+</Accordion>
+
+<Accordion title="Repository not found">
+  ```bash
+  ./shannon start URL=https://example.com REPO=nonexistent
+  ```
+  
+  **Error:**
+  ```
+  ERROR: Repository not found at ./repos/nonexistent
+  
+  Place your target repository under the ./repos/ directory
+  ```
+</Accordion>
+
+<Accordion title="Missing API credentials">
+  **Error:**
+  ```
+  ERROR: Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in .env
+         (or use CLAUDE_CODE_USE_BEDROCK=1 for AWS Bedrock,
+          CLAUDE_CODE_USE_VERTEX=1 for Google Vertex AI,
+          or ROUTER=true with OPENAI_API_KEY or OPENROUTER_API_KEY)
+  ```
+</Accordion>
+
+---
+
+## logs
+
+Tail real-time logs for a specific workflow.
+
+### Usage
+
+```bash
+./shannon logs ID=<workflow-id>
+```
+
+### Required Parameters
+
+<ParamField path="ID" type="string" required>
+  Workflow ID to view logs for
+  
+  Format: `{hostname}_{sessionId}` (e.g., `example.com_shannon-1234567890`)
+</ParamField>
+
+### Examples
+
+<Accordion title="Tail workflow logs">
+  ```bash
+  ./shannon logs ID=example.com_shannon-1234567890
+  ```
+  
+  **Output:**
+  ```
+  Tailing workflow log: ./audit-logs/example.com_shannon-1234567890/workflow.log
+  
+  [2026-03-03 10:15:32] Starting Pre-Recon phase...
+  [2026-03-03 10:15:45] Running nmap scan on example.com
+  [2026-03-03 10:16:02] Discovered 3 open ports
+  [2026-03-03 10:16:15] Analyzing source code...
+  ...
+  ```
+</Accordion>
+
+<Accordion title="Resume workflow logs">
+  ```bash
+  ./shannon logs ID=q1-audit_resume_123
+  ```
+  
+  Automatically finds the correct log file for resumed workflows.
+</Accordion>
+
+### Error Handling
+
+<Accordion title="Workflow not found">
+  ```bash
+  ./shannon logs ID=invalid-workflow-id
+  ```
+  
+  **Error:**
+  ```
+  ERROR: Workflow log not found for ID: invalid-workflow-id
+  
+  Possible causes:
+    - Workflow hasn't started yet
+    - Workflow ID is incorrect
+  
+  Check the Temporal Web UI at http://localhost:8233 for workflow details
+  ```
+</Accordion>
+
+### Notes
+
+- The logs command automatically searches for log files in:
+  1. Default location: `./audit-logs/{ID}/workflow.log`
+  2. Resume workflow locations
+  3. Custom output directories (up to 3 levels deep)
+- Logs are displayed in real-time using `tail -f`
+- Press `Ctrl+C` to stop tailing
+
+---
+
+## workspaces
+
+List all active and completed workspaces with their status.
+
+### Usage
+
+```bash
+./shannon workspaces
+```
+
+### Examples
+
+<Accordion title="List all workspaces">
+  ```bash
+  ./shannon workspaces
+  ```
+  
+  **Output:**
+  ```
+  Starting Shannon containers...
+  Temporal is ready!
+  
+  Active Workspaces:
+  
+  Name: q1-audit
+  URL: https://example.com
+  Status: Running (Vulnerability Analysis phase)
+  Started: 2026-03-03 09:30:15
+  Progress: 3/5 phases complete
+  
+  Name: staging-test
+  URL: https://staging.example.com
+  Status: Completed
+  Started: 2026-03-02 14:20:00
+  Completed: 2026-03-02 16:45:30
+  
+  Total: 2 workspaces
+  ```
+</Accordion>
+
+### Notes
+
+- Requires Temporal containers to be running (automatically started)
+- Shows both in-progress and completed workflows
+- Displays workspace names, target URLs, status, and timestamps
+- Use workspace names with the `WORKSPACE` parameter to resume
+
+---
+
+## stop
+
+Stop Shannon containers and optionally clean up all data.
+
+### Usage
+
+```bash
+./shannon stop [CLEAN=true]
+```
+
+### Optional Parameters
+
+<ParamField path="CLEAN" type="boolean" default="false">
+  Remove all data including Docker volumes
+  
+  **Without CLEAN:** Preserves workflow data, databases, and state for resuming
+  
+  **With CLEAN=true:** Complete cleanup including all volumes and persistent data
+  
+  ```bash
+  ./shannon stop CLEAN=true
+  ```
+</ParamField>
+
+### Examples
+
+<Accordion title="Stop containers (preserve data)">
+  ```bash
+  ./shannon stop
+  ```
+  
+  **Output:**
+  ```
+  Stopping Shannon containers...
+  
+  [+] Running 5/5
+   ✔ Container shannon-worker-1    Stopped
+   ✔ Container shannon-temporal-1  Stopped
+   ✔ Container shannon-postgres-1  Stopped
+   ✔ Container shannon-router-1    Stopped
+   ✔ Network shannon_default       Removed
+  ```
+  
+  Workflow data is preserved. Running `./shannon start` again will resume from checkpoints.
+</Accordion>
+
+<Accordion title="Stop and clean all data">
+  ```bash
+  ./shannon stop CLEAN=true
+  ```
+  
+  **Output:**
+  ```
+  Stopping Shannon containers and removing volumes...
+  
+  [+] Running 8/8
+   ✔ Container shannon-worker-1     Removed
+   ✔ Container shannon-temporal-1   Removed
+   ✔ Container shannon-postgres-1   Removed
+   ✔ Container shannon-router-1     Removed
+   ✔ Volume shannon_postgres-data   Removed
+   ✔ Volume shannon_temporal-data   Removed
+   ✔ Network shannon_default        Removed
+  ```
+  
+  All workflow state, databases, and persistent data removed.
+</Accordion>
+
+### Notes
+
+- Default stop preserves Temporal workflow state and PostgreSQL data
+- Use `CLEAN=true` only when you want to completely reset Shannon
+- Audit logs in `./audit-logs/` are NOT removed by `CLEAN=true`
+- Router container is always stopped (uses `--profile router`)
+
+---
+
+## help
+
+Display Shannon CLI help information with ASCII banner and usage examples.
+
+### Usage
+
+```bash
+./shannon help
+# or
+./shannon --help
+# or
+./shannon -h
+# or
+./shannon
+```
+
+### Output
+
+```
+  ███████╗██╗  ██╗ █████╗ ███╗   ██╗███╗   ██╗ ██████╗ ███╗   ██╗
+  ██╔════╝██║  ██║██╔══██╗████╗  ██║████╗  ██║██╔═══██╗████╗  ██║
+  ███████╗███████║███████║██╔██╗ ██║██╔██╗ ██║██║   ██║██╔██╗ ██║
+  ╚════██║██╔══██║██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║██║╚██╗██║
+  ███████║██║  ██║██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝██║ ╚████║
+  ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═══╝
+
+           AI Penetration Testing Framework
+
+Usage:
+  ./shannon start URL=<url> REPO=<name>   Start a pentest workflow
+  ./shannon workspaces                    List all workspaces
+  ./shannon logs ID=<workflow-id>         Tail logs for a specific workflow
+  ./shannon stop                          Stop all containers
+  ./shannon help                          Show this help message
+
+Options for 'start':
+  REPO=<name>            Folder name under ./repos/ (e.g. REPO=repo-name)
+  CONFIG=<path>          Configuration file (YAML)
+  OUTPUT=<path>          Output directory for reports (default: ./audit-logs/)
+  WORKSPACE=<name>       Named workspace (auto-resumes if exists, creates if new)
+  PIPELINE_TESTING=true  Use minimal prompts for fast testing
+  ROUTER=true            Route requests through claude-code-router (multi-model support)
+
+Options for 'stop':
+  CLEAN=true             Remove all data including volumes
+
+Examples:
+  ./shannon start URL=https://example.com REPO=repo-name
+  ./shannon start URL=https://example.com REPO=repo-name WORKSPACE=q1-audit
+  ./shannon start URL=https://example.com REPO=repo-name CONFIG=./config.yaml
+  ./shannon start URL=https://example.com REPO=repo-name OUTPUT=./my-reports
+  ./shannon workspaces
+  ./shannon logs ID=example.com_shannon-1234567890
+  ./shannon stop CLEAN=true
+
+Monitor workflows at http://localhost:8233
+```
+
+### Notes
+
+- Default command when no arguments provided
+- Also triggered by `--help`, `-h`, or invalid commands
+- Displays full ASCII banner and comprehensive usage information

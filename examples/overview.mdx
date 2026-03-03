@@ -1,0 +1,109 @@
+---
+title: Sample reports
+description: Real-world penetration testing results from Shannon
+---
+
+Shannon has been tested against industry-standard intentionally vulnerable applications to demonstrate its capabilities. These sample reports showcase Shannon's ability to discover, exploit, and document real security vulnerabilities.
+
+## Benchmark performance
+
+Shannon Lite achieved a **96.15% success rate** (100/104 exploits) on a systematically cleaned, hint-free version of the XBOW security benchmark, running in white-box (source-available) configuration.
+
+<CardGroup cols={2}>
+  <Card title="Benchmark results" icon="trophy" href="/coverage/benchmark-results">
+    96.15% success rate on XBOW benchmark with detailed methodology
+  </Card>
+  <Card title="Vulnerability coverage" icon="shield-check" href="/coverage/vulnerability-types">
+    Complete coverage of OWASP vulnerability classes
+  </Card>
+</CardGroup>
+
+## Sample reports from vulnerable applications
+
+These reports demonstrate Shannon's ability to move beyond simple scanning, performing deep contextual exploitation with minimal false positives and actionable proof-of-concepts.
+
+<CardGroup cols={3}>
+  <Card title="OWASP Juice Shop" icon="mug-hot" href="/examples/juice-shop">
+    20+ critical vulnerabilities including complete auth bypass and database exfiltration
+  </Card>
+  <Card title="c{api}tal API" icon="code" href="/examples/capital-api">
+    Nearly 15 critical vulnerabilities leading to full application compromise
+  </Card>
+  <Card title="OWASP crAPI" icon="car" href="/examples/crapi">
+    Over 15 critical vulnerabilities with advanced JWT attacks and SSRF exploitation
+  </Card>
+</CardGroup>
+
+## Report structure
+
+Every Shannon report follows a consistent structure designed for actionable security assessment:
+
+<Steps>
+  <Step title="Executive summary">
+    High-level overview of findings by vulnerability type with overall risk assessment
+  </Step>
+  <Step title="Network reconnaissance">
+    Open ports, services, security misconfigurations, and SSL/TLS analysis
+  </Step>
+  <Step title="Vulnerability exploitation evidence">
+    Detailed proof-of-concept exploits for each confirmed vulnerability:
+    - Vulnerable location (endpoint, parameter, code reference)
+    - Impact assessment and severity rating
+    - Step-by-step exploitation procedure
+    - Actual exploit payloads and responses
+    - Proof of impact with concrete evidence
+  </Step>
+  <Step title="Technical notes">
+    Code-level analysis referencing specific files and line numbers from source review
+  </Step>
+</Steps>
+
+## Key report features
+
+<CardGroup cols={2}>
+  <Card title="Proof-by-exploitation" icon="check-double">
+    Every reported vulnerability includes a working proof-of-concept. No exploit = no report.
+  </Card>
+  <Card title="Copy-paste PoCs" icon="terminal">
+    All exploits include ready-to-run curl commands and code examples
+  </Card>
+  <Card title="Code references" icon="file-code">
+    Vulnerabilities link to specific source files and line numbers
+  </Card>
+  <Card title="Zero false positives" icon="circle-xmark">
+    Only exploitable vulnerabilities are reported - theoretical risks are excluded
+  </Card>
+</CardGroup>
+
+## Report metrics
+
+<Accordion title="What's included in each report">
+  Each Shannon report includes:
+  
+  - **Target information**: Application name, URL, assessment date, scope
+  - **Vulnerability summary**: Organized by OWASP category
+  - **Network reconnaissance**: Infrastructure analysis from nmap, subfinder, whatweb
+  - **Exploitation evidence**: Detailed PoC for each vulnerability
+  - **Severity ratings**: Critical, High, Medium, Low classifications
+  - **Impact assessment**: Business impact and risk analysis
+  - **Remediation guidance**: Code-level fix recommendations
+</Accordion>
+
+<Accordion title="Runtime and costs">
+  Based on testing against OWASP Juice Shop, c{api}tal, and crAPI:
+  
+  - **Time**: Approximately 1 to 1.5 hours per full assessment
+  - **Cost**: Approximately $50 USD using Claude 4.5 Sonnet (varies by application complexity)
+  - **Coverage**: 5 parallel vulnerability analysis agents + 5 parallel exploitation agents
+</Accordion>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Run your first pentest" icon="rocket" href="/quickstart">
+    Get started with Shannon in under 10 minutes
+  </Card>
+  <Card title="View detailed results" icon="file-lines" href="/examples/juice-shop">
+    Explore the complete OWASP Juice Shop report
+  </Card>
+</CardGroup>

@@ -1,0 +1,246 @@
+---
+title: Testing coverage
+description: Shannon's comprehensive security testing coverage based on OWASP standards
+---
+
+Shannon's testing coverage is strategically focused on exploitable vulnerabilities in modern web application stacks. Shannon follows a **proof-by-exploitation** methodology, meaning every reported vulnerability includes a working proof-of-concept exploit.
+
+<Info>
+  Shannon currently targets classes of **exploitable** vulnerabilities. Issues that cannot be actively exploited (such as vulnerable third-party libraries, weak encryption algorithms, or insecure configurations) are not included in reports.
+</Info>
+
+## Coverage philosophy
+
+<CardGroup cols={2}>
+  <Card title="No exploit, no report" icon="check-double">
+    Every vulnerability must be successfully exploited to be reported - eliminates false positives
+  </Card>
+  <Card title="Code-aware testing" icon="file-code">
+    White-box analysis combines source code review with dynamic exploitation
+  </Card>
+  <Card title="OWASP-aligned" icon="shield-check">
+    Coverage maps to OWASP Web Security Testing Guide (WSTG) controls
+  </Card>
+  <Card title="Pentester-grade output" icon="award">
+    Reports include working PoCs, code references, and impact analysis
+  </Card>
+</CardGroup>
+
+## Current vulnerability coverage
+
+Shannon currently targets five major vulnerability classes:
+
+### 1. Broken authentication
+
+<Accordion title="Authentication vulnerabilities covered">
+  - **Authentication bypass**: SQL injection, NoSQL injection, logic flaws
+  - **Weak authentication**: Default credentials, weak passwords, no lockout
+  - **Multi-factor authentication**: TOTP bypass, backup code abuse
+  - **Session management**: Fixation, hijacking, weak tokens
+  - **JWT attacks**: Algorithm confusion, alg:none, weak signatures, kid injection
+  - **Password reset**: Account enumeration, token prediction, bypass
+  - **Credential transport**: Unencrypted channels, weak TLS
+
+  **WSTG mapping:** WSTG-ATHN-01 through WSTG-ATHN-11
+</Accordion>
+
+### 2. Broken authorization
+
+<Accordion title="Authorization vulnerabilities covered">
+  - **Horizontal privilege escalation**: IDOR (Insecure Direct Object References)
+  - **Vertical privilege escalation**: Admin access from regular user
+  - **Mass assignment**: Privilege field injection
+  - **Broken function-level authorization**: Missing role checks
+  - **OAuth weaknesses**: Token theft, scope bypass
+  - **Directory traversal**: Path manipulation, file access
+  - **Business logic bypass**: Payment bypass, workflow circumvention
+
+  **WSTG mapping:** WSTG-ATHZ-01 through WSTG-ATHZ-05, WSTG-BUSL-*
+</Accordion>
+
+### 3. Injection attacks
+
+<Accordion title="Injection vulnerabilities covered">
+  - **SQL injection**: Union-based, boolean-based blind, time-based blind, error-based
+  - **NoSQL injection**: MongoDB operator injection, JSON injection
+  - **Command injection**: OS command execution, shell metacharacter abuse
+  - **Code injection**: eval() exploitation, unsafe deserialization
+  - **Server-Side Template Injection (SSTI)**: Jinja2, Twig, Handlebars, etc.
+  - **XXE (XML External Entity)**: File disclosure, SSRF via XXE
+  - **YAML injection**: Unsafe deserialization
+
+  **WSTG mapping:** WSTG-INPV-05, WSTG-INPV-11, WSTG-INPV-12, WSTG-INPV-18
+</Accordion>
+
+### 4. Cross-site scripting (XSS)
+
+<Accordion title="XSS vulnerabilities covered">
+  - **Reflected XSS**: Parameter-based, header-based, URL-based
+  - **Stored XSS**: Database-stored, file-stored, log injection
+  - **DOM-based XSS**: Client-side template injection, unsafe sinks
+  - **XSS filter bypass**: Encoding, obfuscation, polyglot payloads
+  - **JSONP callback XSS**: Unvalidated callbacks
+  - **Framework bypasses**: Angular, React, Vue sanitization bypass
+
+  **WSTG mapping:** WSTG-INPV-01, WSTG-INPV-02, WSTG-CLNT-01, WSTG-CLNT-02, WSTG-CLNT-03
+</Accordion>
+
+### 5. Server-Side Request Forgery (SSRF)
+
+<Accordion title="SSRF vulnerabilities covered">
+  - **Internal service access**: Redis, databases, admin panels
+  - **Cloud metadata**: AWS, GCP, Azure instance metadata
+  - **Protocol bypass**: file://, gopher://, dict://
+  - **Network scanning**: Port enumeration, service fingerprinting
+  - **DNS rebinding**: Time-of-check/time-of-use
+  - **SSRF to RCE**: Exploiting internal services
+
+  **WSTG mapping:** WSTG-INPV-19
+</Accordion>
+
+## WSTG checklist coverage
+
+Shannon's coverage aligns with the OWASP Web Security Testing Guide (WSTG). See the [detailed WSTG checklist](/coverage/vulnerability-types#wstg-checklist) for complete mapping.
+
+<CardGroup cols={3}>
+  <Card title="Information gathering" icon="magnifying-glass">
+    8/10 WSTG-INFO controls covered
+  </Card>
+  <Card title="Authentication" icon="key">
+    9/11 WSTG-ATHN controls covered
+  </Card>
+  <Card title="Authorization" icon="shield-halved">
+    5/5 WSTG-ATHZ controls covered
+  </Card>
+  <Card title="Session management" icon="clock">
+    8/11 WSTG-SESS controls covered
+  </Card>
+  <Card title="Input validation" icon="filter">
+    10/20 WSTG-INPV controls covered
+  </Card>
+  <Card title="API testing" icon="code">
+    3/3 WSTG-APIT controls covered
+  </Card>
+</CardGroup>
+
+## What Shannon does not cover
+
+Shannon focuses on **dynamic exploitation**. The following areas require static analysis and are planned for future products:
+
+<Warning>
+  **Not currently covered:**
+  
+  - Vulnerable third-party dependencies (planned for Keygraph Code Security SAST)
+  - Weak encryption algorithms and key management
+  - Insecure server configurations
+  - Certificate validation issues
+  - Information disclosure in error messages (unless exploitable)
+  - Client-side security (CORS, CSP, clickjacking) unless exploitable
+  - Business logic issues that cannot be proven through exploitation
+</Warning>
+
+## Integrated security tools
+
+Shannon enhances its analysis by leveraging industry-standard security tools:
+
+<AccordionGroup>
+  <Accordion title="Nmap - Network reconnaissance">
+    - Port scanning and service enumeration
+    - Version detection for exposed services
+    - OS fingerprinting
+    - SSL/TLS configuration analysis
+  </Accordion>
+
+  <Accordion title="Subfinder - Subdomain enumeration">
+    - Passive subdomain discovery
+    - DNS record enumeration
+    - Subdomain takeover detection
+  </Accordion>
+
+  <Accordion title="WhatWeb - Web technology fingerprinting">
+    - Framework and CMS detection
+    - Server software identification
+    - JavaScript library enumeration
+    - Known vulnerability matching
+  </Accordion>
+
+  <Accordion title="Schemathesis - API fuzzing">
+    - OpenAPI/Swagger specification testing
+    - Automated API endpoint discovery
+    - Schema validation bypass detection
+    - Input fuzzing and edge case testing
+  </Accordion>
+
+  <Accordion title="Playwright - Browser automation">
+    - Automated login workflows
+    - Dynamic page interaction
+    - XSS payload execution
+    - CSRF token handling
+    - Screenshot capture for evidence
+  </Accordion>
+</AccordionGroup>
+
+## Performance metrics
+
+<CardGroup cols={2}>
+  <Card title="XBOW benchmark" icon="trophy">
+    96.15% success rate (100/104 exploits) on hint-free source-aware variant
+  </Card>
+  <Card title="Real-world testing" icon="globe">
+    20+ vulnerabilities in OWASP Juice Shop, 15 in c{api}tal, 15+ in crAPI
+  </Card>
+  <Card title="Runtime" icon="clock">
+    1-1.5 hours per complete assessment
+  </Card>
+  <Card title="Cost" icon="dollar-sign">
+    ~$50 USD per full pentest using Claude 4.5 Sonnet
+  </Card>
+</CardGroup>
+
+## Future coverage expansion
+
+Shannon's roadmap includes expanding coverage to additional vulnerability classes:
+
+<Steps>
+  <Step title="Phase 1: Enhanced injection detection">
+    - LDAP injection
+    - XML injection
+    - XPath injection
+    - Format string vulnerabilities
+  </Step>
+  <Step title="Phase 2: Advanced client-side attacks">
+    - Clickjacking and UI redressing
+    - CORS misconfiguration exploitation
+    - WebSocket injection
+    - PostMessage vulnerabilities
+  </Step>
+  <Step title="Phase 3: Business logic testing">
+    - Race conditions
+    - Workflow bypass
+    - Payment manipulation
+    - Resource limit bypass
+  </Step>
+  <Step title="Phase 4: API security expansion">
+    - GraphQL injection and DoS
+    - Rate limit bypass techniques
+    - API versioning attacks
+    - Batch request abuse
+  </Step>
+</Steps>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Vulnerability types" icon="bug" href="/coverage/vulnerability-types">
+    Detailed breakdown of each vulnerability class with WSTG mapping
+  </Card>
+  <Card title="Benchmark results" icon="chart-line" href="/coverage/benchmark-results">
+    96.15% success rate on XBOW benchmark with full analysis
+  </Card>
+  <Card title="Sample reports" icon="file-lines" href="/examples/overview">
+    Real penetration testing results from Juice Shop, c{api}tal, and crAPI
+  </Card>
+  <Card title="Run your first pentest" icon="rocket" href="/quickstart">
+    Get started with Shannon in under 10 minutes
+  </Card>
+</CardGroup>
