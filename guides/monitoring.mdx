@@ -263,34 +263,31 @@ Then navigate to `http://<wsl-ip>:8233` from your Windows browser.
 
 ## Workflow Queries
 
-Query workflow state programmatically using the Temporal client.
+Shannon supports querying workflow state programmatically, but this is only available through the Temporal Web UI or custom code.
 
-### Progress Query
+<Info>
+**No CLI Query Command**
 
-```bash
-# Query current progress (requires workflow ID)
-./shannon query ID=example-com_shannon-1771007534808
-```
+Shannon does not currently provide a `./shannon query` command. To check workflow progress:
+- Use the **Temporal Web UI** at `http://localhost:8233`
+- Use `./shannon logs ID=<workflow-id>` to view detailed logs
+- Use `./shannon workspaces` to list all workspaces and their status
+</Info>
 
-Output:
-```json
+For developers who want to implement custom queries, Shannon exposes a `PROGRESS_QUERY` that returns:
+
+```typescript
 {
-  "currentPhase": "vulnerability-analysis",
-  "completedAgents": ["pre-recon", "recon"],
-  "currentAgent": "vuln-injection",
-  "status": "running",
-  "startTime": "2026-03-03T10:15:23Z",
-  "duration": "32m 18s"
+  currentPhase: string;
+  completedAgents: string[];
+  currentAgent: string;
+  status: string;
+  startTime: string;
+  duration: string;
 }
 ```
 
-<Warning>
-**Query Command Not Implemented**
-
-The `./shannon query` command shown above is for illustration. To query workflow state, use the Temporal Web UI or implement a custom query client.
-
-See `src/temporal/shared.ts` for the `PROGRESS_QUERY` definition and `src/temporal/workflows.ts` for query handlers.
-</Warning>
+See `src/temporal/shared.ts` for the query definition and `src/temporal/workflows.ts` for query handlers.
 
 ## Workspace Listing
 
